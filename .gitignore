@@ -1,0 +1,26 @@
+# 비밀값
+.env
+.env.*
+!.env.example
+
+# 회의 녹음 · 결과 (개인 음성과 대화 내용은 공개 저장소에 올리지 않는다)
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+recordings/
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# OS / 에디터
+.DS_Store
+.idea/
+.vscode/
