@@ -31,6 +31,18 @@ uv run uvicorn app.main:app --reload
 - API 문서: http://localhost:8000/docs
 - 상태 확인: http://localhost:8000/health
 
+## Docker
+
+```bash
+docker build -t kaltoe-backend .
+docker run --rm -p 8000:8000 --env-file .env kaltoe-backend
+```
+
+- 이미지에는 `app/` 과 의존성만 들어가고, `.env` 는 실행할 때 `--env-file` 로 넘깁니다.
+- 회의룸 연결을 메모리에서 관리하므로 **컨테이너 1개, 워커 1개**로만 띄웁니다. 여러 개로 늘리면 같은 회의 참가자끼리 이벤트가 전달되지 않습니다.
+- HTTPS(`wss`)는 앞단 프록시(Caddy 등)가 맡습니다. 브라우저 마이크는 HTTPS 에서만 동작합니다.
+- 서버에서는 `-p 127.0.0.1:8000:8000` 으로 띄워 8000 포트를 외부에 열지 않습니다. 앱이 프록시 헤더를 믿도록 설정돼 있어서, 프록시를 거치지 않는 접근을 막아야 합니다.
+
 ## 검사
 
 CI(`.github/workflows/ci.yml`)가 PR마다 아래를 실행합니다. 올리기 전에 로컬에서 먼저 돌려 주세요.

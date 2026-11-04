@@ -1,0 +1,10 @@
+# 이미지에는 pyproject.toml, uv.lock, .python-version, app/ 만 필요하다
+*
+
+!pyproject.toml
+!uv.lock
+!.python-version
+!app/
+
+**/__pycache__
+**/*.pyc
