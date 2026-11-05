@@ -3,6 +3,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Actions 탭에서 main 을 골라 수동 배포
+  workflow_dispatch:
 
 permissions: { contents: read }
 
@@ -39,10 +41,32 @@ jobs:
           docker logs api
           exit 1
 
-  # main 에 병합되면 이미지를 GHCR 에 올리고 EC2 에 배포한다 (PR 에서는 건너뜀)
-  deploy:
+  # main 에 병합된 변경이 서버 이미지에 영향을 주는지 확인한다 (문서만 바뀌면 재시작하지 않음)
+  changes:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [python, docker]
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.diff.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: diff
+        run: |
+          if git diff --name-only HEAD~1 HEAD \
+            | grep -qE '^(app/|Dockerfile$|\.dockerignore$|pyproject\.toml$|uv\.lock$|\.python-version$|\.github/workflows/ci\.yml$)'; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "app=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # 서버 코드가 바뀐 채로 main 에 병합되거나 수동 실행하면 이미지를 GHCR 에 올리고 EC2 에 배포한다 (PR 에서는 건너뜀)
+  deploy:
+    if: >-
+      always() && github.ref == 'refs/heads/main'
+      && needs.python.result == 'success' && needs.docker.result == 'success'
+      && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.app == 'true')
+    needs: [python, docker, changes]
     runs-on: ubuntu-latest
     concurrency: deploy
     permissions:
