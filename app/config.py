@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     # 쉼표로 구분한 프론트 주소 (예: http://localhost:3000,https://kaltoe.app)
     cors_origins: str = "http://localhost:3000"
 
+    # PostgreSQL (asyncpg). 로컬 기본값은 README 의 docker run 명령과 같다
+    database_url: str = "postgresql+asyncpg://kaltoe:kaltoe@localhost:5432/kaltoe"
+
     # CLOVA Speech 장문 인식 — 회의 후 화자 분리
     clova_long_invoke_url: str = ""
     clova_long_secret: str = ""
