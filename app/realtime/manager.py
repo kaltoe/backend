@@ -11,22 +11,28 @@ from fastapi import WebSocket
 
 class ConnectionManager:
     def __init__(self) -> None:
-        self._rooms: dict[str, set[WebSocket]] = defaultdict(set)
+        # 회의별 연결 → 그 연결의 참가자 ID(토큰 확인 전 뼈대 연결은 None)
+        self._rooms: dict[str, dict[WebSocket, int | None]] = defaultdict(dict)
 
-    async def connect(self, meeting_id: str, websocket: WebSocket) -> None:
+    async def connect(self, meeting_id: str, websocket: WebSocket, participant_id: int | None = None) -> None:
         await websocket.accept()
-        self._rooms[meeting_id].add(websocket)
+        self._rooms[meeting_id][websocket] = participant_id
 
     def disconnect(self, meeting_id: str, websocket: WebSocket) -> None:
         room = self._rooms.get(meeting_id)
         if room is None:
             return
-        room.discard(websocket)
+        room.pop(websocket, None)
         if not room:
             del self._rooms[meeting_id]
 
     def count(self, meeting_id: str) -> int:
+        """API-01 connectedCount."""
         return len(self._rooms.get(meeting_id, ()))
+
+    def is_connected(self, meeting_id: str, participant_id: int) -> bool:
+        """API-03 이어받기 판단: 그 참가자의 소켓이 지금 붙어 있는가."""
+        return participant_id in self._rooms.get(meeting_id, {}).values()
 
     async def broadcast(self, meeting_id: str, event: dict[str, Any]) -> None:
         dead = []

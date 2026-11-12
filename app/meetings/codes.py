@@ -12,6 +12,8 @@ import bcrypt
 
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 MEETING_CODE_LENGTH = 6
+# bcrypt 비용. 12 면 해시 하나에 수백 ms. 테스트는 conftest 에서 최소값 4 로 낮춘다
+BCRYPT_ROUNDS = 12
 
 
 def _random_chars(n: int) -> str:
@@ -27,7 +29,7 @@ def new_recovery_key() -> str:
 
 
 def _hash(secret: str) -> str:
-    return bcrypt.hashpw(secret.encode(), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(secret.encode(), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode()
 
 
 def _verify(secret: str, hashed: str) -> bool:
