@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     # PostgreSQL (asyncpg). 로컬 기본값은 README 의 docker run 명령과 같다
     database_url: str = "postgresql+asyncpg://kaltoe:kaltoe@localhost:5432/kaltoe"
 
+    # 참가자 토큰(JWT) 서명 키. 비우면 프로세스마다 임시 키를 만든다(재시작하면 토큰 무효)
+    jwt_secret: str = ""
+
     # CLOVA Speech 장문 인식 — 회의 후 화자 분리
     clova_long_invoke_url: str = ""
     clova_long_secret: str = ""
