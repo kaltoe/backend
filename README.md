@@ -9,7 +9,7 @@ app/
   main.py         앱 생성, CORS, 라우터 연결
   config.py       환경 변수 (.env)
   api/            HTTP API 공통 규약 — 응답 형식, 에러 코드, 토큰, 요청 제한
-  meetings/       회의 API — 타이머 계산(timer.py), 회의 생성(create.py)
+  meetings/       회의 API — 타이머 계산(timer.py), 회의 생성(create.py), 입장 정보(entry.py)
   db/             DB 모델(ERD 명세서 기준), 세션, 마이그레이션(migrations/)
   realtime/       회의룸 WebSocket — 같은 회의 참여자에게 이벤트 전달
   stt/            STT 엔진 연동 — 결과는 Utterance 로 통일

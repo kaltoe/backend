@@ -1,6 +1,6 @@
 import asyncio
 import re
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import Iterator
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -13,8 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import read_token
 from app.api.errors import VALIDATION_MESSAGE
 from app.db.models import Agenda, Meeting, Participant
-from app.db.session import get_db
-from app.main import create_app
 from app.meetings import codes
 from app.meetings.idempotency import IdempotencyCache, create_meeting_cache
 from app.meetings.schemas import (
@@ -55,19 +53,6 @@ def _clear_cache() -> Iterator[None]:
     create_meeting_cache.clear()
     yield
     create_meeting_cache.clear()
-
-
-@pytest.fixture
-async def client(session: AsyncSession) -> AsyncIterator[httpx.AsyncClient]:
-    app = create_app()
-
-    async def override() -> AsyncIterator[AsyncSession]:
-        yield session
-
-    app.dependency_overrides[get_db] = override
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
 
 
 async def meeting_count(session: AsyncSession) -> int:
