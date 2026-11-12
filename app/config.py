@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     app_env: str = "local"
     # 쉼표로 구분한 프론트 주소 (예: http://localhost:3000,https://kaltoe.app)
     cors_origins: str = "http://localhost:3000"
+    # 초대 링크 앞부분. invite.url = {FRONTEND_BASE_URL}/m/{회의 코드}
+    frontend_base_url: str = "http://localhost:3000"
 
     # PostgreSQL (asyncpg). 로컬 기본값은 README 의 docker run 명령과 같다
     database_url: str = "postgresql+asyncpg://kaltoe:kaltoe@localhost:5432/kaltoe"
