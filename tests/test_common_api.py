@@ -207,7 +207,7 @@ def test_token_signed_with_other_key_is_rejected() -> None:
 
     forged = jwt.encode(
         {"participantId": 1, "meetingId": "K7Q2MX", "role": "HOST", "exp": datetime.now(UTC) + timedelta(days=1)},
-        "guessed-key",
+        "guessed-key-that-is-long-enough-for-hs256",
         algorithm="HS256",
     )
     assert read_token(forged, "K7Q2MX") is None
