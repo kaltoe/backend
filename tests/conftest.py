@@ -9,6 +9,7 @@ import os
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -16,6 +17,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.config import get_settings
+from app.db.session import get_db
+from app.main import create_app
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -62,3 +65,17 @@ async def session(db_url: str) -> AsyncIterator[AsyncSession]:
             yield s
         await trans.rollback()
     await engine.dispose()
+
+
+@pytest.fixture
+async def client(session: AsyncSession) -> AsyncIterator[httpx.AsyncClient]:
+    """실제 앱에 테스트 세션을 주입한 클라이언트. 요청의 커밋도 테스트가 끝나면 롤백된다."""
+    app = create_app()
+
+    async def override() -> AsyncIterator[AsyncSession]:
+        yield session
+
+    app.dependency_overrides[get_db] = override
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
