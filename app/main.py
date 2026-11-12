@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import health
+from app.api.errors import install_error_handlers
+from app.api.router import api_router
 from app.config import get_settings
 from app.realtime import ws
 
@@ -16,7 +18,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    install_error_handlers(app)
     app.include_router(health.router)
+    app.include_router(api_router)
     app.include_router(ws.router)
     return app
 
