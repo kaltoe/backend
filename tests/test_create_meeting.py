@@ -1,6 +1,5 @@
 import asyncio
 import re
-from collections.abc import Iterator
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -14,7 +13,7 @@ from app.api.auth import read_token
 from app.api.errors import VALIDATION_MESSAGE
 from app.db.models import Agenda, Meeting, Participant
 from app.meetings import codes
-from app.meetings.idempotency import IdempotencyCache, create_meeting_cache
+from app.meetings.idempotency import IdempotencyCache
 from app.meetings.schemas import (
     AGENDA_LIMIT_MESSAGE,
     AGENDA_TITLE_MESSAGE,
@@ -46,13 +45,6 @@ def payload(**overrides: Any) -> dict[str, Any]:
 
 def agenda(**overrides: Any) -> dict[str, Any]:
     return {"title": "안건", "keywords": [], "allocatedMinutes": 10, **overrides}
-
-
-@pytest.fixture(autouse=True)
-def _clear_cache() -> Iterator[None]:
-    create_meeting_cache.clear()
-    yield
-    create_meeting_cache.clear()
 
 
 async def meeting_count(session: AsyncSession) -> int:

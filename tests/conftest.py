@@ -6,7 +6,7 @@ DATABASE_URL 의 Postgres 에 마이그레이션을 적용하고, 테스트마�
 
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import httpx
@@ -16,9 +16,13 @@ from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from app.api.rate_limit import entry_limiter
 from app.config import get_settings
 from app.db.session import get_db
 from app.main import create_app
+from app.meetings import codes
+from app.meetings.attempts import password_failures, recovery_key_failures
+from app.meetings.idempotency import create_meeting_cache
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -79,3 +83,23 @@ async def client(session: AsyncSession) -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+def _fast_bcrypt(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(codes, "BCRYPT_ROUNDS", 4)
+
+
+@pytest.fixture(autouse=True)
+def _reset_memory_state() -> Iterator[None]:
+    """요청 제한·실패 잠금·멱등성처럼 서버 메모리에 남는 상태를 테스트마다 비운다."""
+
+    def reset() -> None:
+        entry_limiter.reset()
+        password_failures.reset()
+        recovery_key_failures.reset()
+        create_meeting_cache.clear()
+
+    reset()
+    yield
+    reset()
