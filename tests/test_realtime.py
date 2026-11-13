@@ -2,7 +2,8 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from datetime import timedelta
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Meeting
 from app.log_filters import DropQueryString, strip_query
 from app.meetings.timer import utcnow
+from app.realtime import manager as manager_module
 from app.realtime import ws as ws_module
 from app.realtime.manager import manager
 from tests.conftest import ws_client
@@ -102,10 +104,34 @@ async def test_close_codes(app: FastAPI, session: AsyncSession) -> None:
 
         meeting = await session.get(Meeting, r.code)
         assert meeting is not None
+        expires_at = meeting.expires_at
+        meeting.expires_at = utcnow() - timedelta(seconds=1)  # 만료(API-01 의 410 MEETING_EXPIRED)
+        await session.flush()
+        async with r.connect(r.host_token) as ws:
+            assert await close_code(ws) == 4410
+        meeting.expires_at = expires_at
+
         meeting.status, meeting.ended_at, meeting.ended_by = "ENDED", utcnow(), "HOST"
         await session.flush()
         async with r.connect(r.host_token) as ws:
             assert await close_code(ws) == 4410
+
+
+async def test_stalled_send_times_out_and_drops_connection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """받지 않는 클라이언트 하나 때문에 브로드캐스트가 멈추지 않는다."""
+    monkeypatch.setattr(manager_module, "SEND_TIMEOUT_SECONDS", 0.05)
+
+    class StalledSocket:
+        async def send_json(self, message: Any) -> None:
+            await asyncio.Event().wait()  # 영원히 끝나지 않는 전송
+
+    reader = asyncio.create_task(asyncio.Event().wait())
+    connection = manager_module.Connection(
+        websocket=cast(Any, StalledSocket()), member=manager_module.Member(1, "민지", "MEMBER"), reader=reader
+    )
+    assert await connection.send({"type": "pong"}) is False
+    with pytest.raises(asyncio.CancelledError):
+        await reader
 
 
 # participant.joined / left / connectedCount

@@ -28,18 +28,30 @@ class Member:
     role: str
 
 
+SEND_TIMEOUT_SECONDS = 5.0
+
+
 @dataclass(eq=False)
 class Connection:
     websocket: WebSocket
     member: Member
     # pong 과 브로드캐스트가 같은 소켓에 동시에 쓰지 않게 한다
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # 이 연결의 받기 루프(ws.status_channel). 보내기가 막히면 취소해 연결을 정리한다
+    reader: asyncio.Task[Any] | None = None
 
     async def send(self, message: dict[str, Any]) -> bool:
         try:
             async with self.send_lock:
-                await self.websocket.send_json(message)
+                await asyncio.wait_for(self.websocket.send_json(message), SEND_TIMEOUT_SECONDS)
             return True
+        except TimeoutError:
+            # 받지 않는 클라이언트 하나가 브로드캐스트(다른 사람의 처리, timer.sync)를 붙잡지 않게 끊는다.
+            # 받기 루프의 finally 가 목록에서 빼고 participant.left 를 보낸다
+            logger.info("WebSocket 전송 시간 초과로 연결을 끊습니다: participant=%s", self.member.participant_id)
+            if self.reader is not None:
+                self.reader.cancel()
+            return False
         except Exception:  # 끊긴 연결은 받는 쪽 루프가 정리한다
             logger.debug("WebSocket 전송 실패", exc_info=True)
             return False
