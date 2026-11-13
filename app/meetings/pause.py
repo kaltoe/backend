@@ -16,6 +16,7 @@ from app.db.session import get_db
 from app.meetings import timer
 from app.realtime.events import MeetingPaused, MeetingResumed
 from app.realtime.manager import manager
+from app.stt import live
 
 router = APIRouter()
 
@@ -31,8 +32,8 @@ async def pause_meeting(
     snapshot = timer.build_snapshot(meeting, await timer.current_agenda(session, meeting_id), now)
     await session.commit()
 
-    # ponytail: 정지 알림 지점. #20 은 PAUSED 동안 음성을 버리고,
-    # #21/#22 는 리턴제로 세션을 EOS 로 닫고, #23 은 사담 판정을 멈추는 호출을 여기에 붙인다
+    await live.pause(meeting_id)  # 리턴제로 세션을 EOS 로 닫는다. 재개 후 첫 소리에 새 세션을 연다
+    # ponytail: 정지 알림 지점. #23 은 사담 판정을 멈추는 호출을 여기에 붙인다
     paused = MeetingPaused(paused_at=now, timer=snapshot)
     await manager.broadcast(meeting_id, "meeting.paused", paused)
     return ok(paused)
@@ -49,7 +50,7 @@ async def resume_meeting(
     snapshot = timer.build_snapshot(meeting, await timer.current_agenda(session, meeting_id), now)
     await session.commit()
 
-    # ponytail: 재개 알림 지점. #21/#22 는 리턴제로 세션을 새로 열고, #23 은 사담 판정을 다시 시작한다
+    # ponytail: 재개 알림 지점. 리턴제로 세션은 재개 후 첫 소리에 열린다. #23 은 사담 판정을 다시 시작한다
     resumed = MeetingResumed(resumed_at=now, timer=snapshot)
     await manager.broadcast(meeting_id, "meeting.resumed", resumed)
     return ok(resumed)

@@ -28,6 +28,7 @@ from app.meetings import timer
 from app.realtime import audio
 from app.realtime.events import MeetingEnded
 from app.realtime.manager import manager
+from app.stt import live
 
 router = APIRouter()
 
@@ -79,7 +80,8 @@ async def announce(meeting_id: str, ended: MeetingEnded) -> None:
     """커밋한 뒤 부른다."""
     await manager.broadcast(meeting_id, "meeting.ended", ended)
     await audio.close_all(meeting_id)  # WS-02 음성 연결은 4410 으로 닫는다. 녹음 파일은 청크마다 닫혀 있다
-    # ponytail: 종료 후 처리 지점. #21/#22 는 리턴제로 세션을 닫고,
+    await live.end(meeting_id)  # 리턴제로 세션을 EOS 로 닫는다. 남은 확정 문장은 엔진이 닫을 때까지 저장한다
+    # ponytail: 종료 후 처리 지점. #22 는 기기별 리턴제로 세션을 닫고,
     # #25 는 합본 만들기를 백그라운드로 시작하는 호출을 여기에 붙인다
 
 
