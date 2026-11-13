@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.meetings import agendas, create, entry, pause, sign_in, state
+from app.meetings import agendas, create, end, entry, pause, sign_in, state
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(create.router)
@@ -11,3 +11,4 @@ api_router.include_router(sign_in.router)
 api_router.include_router(state.router)
 api_router.include_router(pause.router)
 api_router.include_router(agendas.router)
+api_router.include_router(end.router)

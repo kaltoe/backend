@@ -12,7 +12,7 @@ from pydantic_core import to_jsonable_python
 
 from app.api.errors import GENERIC_MESSAGE
 from app.api.schemas import CamelModel, KstDatetime, to_kst_iso
-from app.db.models import Role
+from app.db.models import EndedBy, Role
 from app.meetings.timer import TimerSnapshot, utcnow
 
 
@@ -59,6 +59,12 @@ class MeetingPaused(CamelModel):
 class MeetingResumed(CamelModel):
     resumed_at: KstDatetime
     timer: TimerSnapshot
+
+
+class MeetingEnded(CamelModel):
+    ended_at: KstDatetime
+    ended_by: EndedBy
+    actual_duration_seconds: int | None
 
 
 class ErrorCode(StrEnum):
