@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 
 import httpx
@@ -10,6 +11,7 @@ from app.api.errors import ApiError, ErrorCode
 from app.api.rate_limit import LIMIT, entry_limiter
 from app.db.models import Meeting, Participant
 from app.meetings import attempts
+from app.meetings import sign_in as sign_in_module
 from app.meetings.sign_in import _new_member, normalize_recovery_key
 from app.meetings.timer import utcnow
 from app.realtime.manager import manager
@@ -222,6 +224,26 @@ async def test_success_resets_password_failures(
     for _ in range(4):
         assert (await sign_in(client, code, name="민지", password="0000")).status_code == 401
     assert (await sign_in(client, code, name="민지", password="1234")).status_code == 200
+
+
+async def test_concurrent_wrong_keys_cannot_bypass_lock(session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
+    """검증이 await 동안 걸려도, 동시에 온 요청 중 5개만 검증까지 간다.
+
+    clock 픽스처는 time.monotonic 을 멈춰 asyncio.sleep 도 멈추므로 쓰지 않는다.
+    """
+
+    async def slow_wrong(secret: str, hashed: str) -> bool:
+        for _ in range(5):
+            await asyncio.sleep(0)  # 다른 요청에 차례를 넘긴다(bcrypt 스레드 대기 흉내)
+        return False
+
+    monkeypatch.setattr(sign_in_module, "verify_secret", slow_wrong)
+    results = await asyncio.gather(
+        *(sign_in_module.recover_host(session, "K7Q2MX", "hash", "AAAA-AAAA") for _ in range(20)),
+        return_exceptions=True,
+    )
+    codes = sorted(r.code.name for r in results if isinstance(r, ApiError))
+    assert codes == ["INVALID_RECOVERY_KEY"] * 5 + ["TOO_MANY_ATTEMPTS"] * 15
 
 
 async def test_recovery_key_lock_per_meeting(client: httpx.AsyncClient, meeting: dict[str, Any], clock: Clock) -> None:
