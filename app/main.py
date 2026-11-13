@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health
+from app.api import docs, health
 from app.api.errors import install_error_handlers
 from app.api.router import api_router
 from app.config import get_settings
@@ -29,7 +29,14 @@ def create_app() -> FastAPI:
     if settings.app_env != "local" and not settings.jwt_secret:
         raise RuntimeError("JWT_SECRET 이 비어 있습니다. APP_ENV=local 이 아니면 반드시 설정해야 합니다.")
     install_log_filters()
-    app = FastAPI(title="칼퇴 API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(
+        title="칼퇴 API",
+        version="0.1.0",
+        description=docs.DESCRIPTION,
+        openapi_tags=docs.TAGS,
+        lifespan=lifespan,
+    )
+    docs.install_openapi(app)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,

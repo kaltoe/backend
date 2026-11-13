@@ -9,7 +9,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api import docs
 from app.api.auth import CurrentHost
+from app.api.errors import ErrorCode
 from app.api.schemas import Envelope, ok
 from app.db.models import MeetingStatus
 from app.db.session import get_db
@@ -21,7 +23,16 @@ from app.stt import live
 router = APIRouter()
 
 
-@router.post("/meetings/{meeting_id}/pause")
+@router.post(
+    "/meetings/{meeting_id}/pause",
+    summary="API-05 일시 정지",
+    description=(
+        "진행자만, 진행 중일 때만 호출할 수 있습니다. 타이머를 멈추고, 그 뒤 들어오는 음성은 버리며 "
+        "실시간 자막 세션을 닫습니다. 전원에게 WS-01 `meeting.paused`를 보냅니다."
+    ),
+    responses=docs.success(docs.PAUSED)
+    | docs.errors(ErrorCode.UNAUTHORIZED, ErrorCode.HOST_ONLY, ErrorCode.INVALID_STATE, ErrorCode.MEETING_ENDED),
+)
 async def pause_meeting(
     meeting_id: str, host: CurrentHost, session: Annotated[AsyncSession, Depends(get_db)]
 ) -> Envelope[MeetingPaused]:
@@ -39,7 +50,17 @@ async def pause_meeting(
     return ok(paused)
 
 
-@router.post("/meetings/{meeting_id}/resume")
+@router.post(
+    "/meetings/{meeting_id}/resume",
+    summary="API-06 회의 재개",
+    description=(
+        "진행자만, 일시 정지 중일 때만 호출할 수 있습니다. 멈춘 시간은 `pausedTotalSeconds`에만 더하고 "
+        "타이머를 다시 돌립니다. 실시간 자막 세션은 재개 후 첫 소리에 새로 엽니다. "
+        "전원에게 WS-01 `meeting.resumed`를 보냅니다."
+    ),
+    responses=docs.success(docs.RESUMED)
+    | docs.errors(ErrorCode.UNAUTHORIZED, ErrorCode.HOST_ONLY, ErrorCode.INVALID_STATE, ErrorCode.MEETING_ENDED),
+)
 async def resume_meeting(
     meeting_id: str, host: CurrentHost, session: Annotated[AsyncSession, Depends(get_db)]
 ) -> Envelope[MeetingResumed]:

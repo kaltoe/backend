@@ -11,7 +11,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api import docs
 from app.api.auth import CurrentHost
+from app.api.errors import ErrorCode
 from app.api.schemas import CamelModel, Envelope, KstDatetime, ok
 from app.db.models import (
     AgendaStatus,
@@ -84,7 +86,18 @@ async def announce(meeting_id: str, ended: MeetingEnded) -> None:
     # ponytail: 종료 후 처리 지점. #25 는 합본 만들기를 백그라운드로 시작하는 호출을 여기에 붙인다
 
 
-@router.post("/meetings/{meeting_id}/end")
+@router.post(
+    "/meetings/{meeting_id}/end",
+    summary="API-08 회의 종료",
+    description=(
+        "[회의 종료] 확인. 진행자만 호출할 수 있습니다. 일시 정지 중이면 멈춘 시간을 합계에 더한 뒤 지금 안건을 닫고, "
+        "끝내지 못한 안건은 결과에서 빠집니다. 전원에게 WS-01 `meeting.ended`를 보냅니다.\n\n"
+        "자동 종료: 접속자가 10분 넘게 없거나, 시작 후 목표 시간보다 60분이 더 지나면 서버가 끝냅니다"
+        "(`endedBy: AUTO`)."
+    ),
+    responses=docs.success(docs.ENDED)
+    | docs.errors(ErrorCode.UNAUTHORIZED, ErrorCode.HOST_ONLY, ErrorCode.MEETING_ENDED),
+)
 async def end_meeting(
     meeting_id: str, host: CurrentHost, session: Annotated[AsyncSession, Depends(get_db)]
 ) -> Envelope[EndedMeeting]:

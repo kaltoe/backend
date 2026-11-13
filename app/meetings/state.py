@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api import docs
 from app.api.auth import CurrentCaller
 from app.api.errors import ApiError, ErrorCode
 from app.api.schemas import CamelModel, Envelope, KstDatetime, ok
@@ -96,7 +97,18 @@ class MeetingState(CamelModel):
     active_offtopic_event: ActiveOfftopicEvent | None
 
 
-@router.get("/meetings/{meeting_id}/state")
+@router.get(
+    "/meetings/{meeting_id}/state",
+    summary="API-04 회의 현재 상태 조회",
+    description=(
+        "라이브 화면 마운트·새로고침·늦은 입장·WebSocket 재연결 때 화면 전체를 복원합니다. "
+        "WebSocket은 놓친 이벤트를 다시 보내지 않으므로 이 응답이 기준입니다. "
+        "`status`가 ENDED여도 200이고, 프론트가 결과 화면으로 보냅니다. "
+        "`transcripts`는 지금 안건의 확정 발화 중 최근 200개(오래된 순)입니다. "
+        "비대면 회의는 `participantId`·`speakerName`에 말한 사람이 들어갑니다."
+    ),
+    responses=docs.success(docs.STATE) | docs.errors(ErrorCode.UNAUTHORIZED),
+)
 async def get_state(
     meeting_id: str, caller: CurrentCaller, session: Annotated[AsyncSession, Depends(get_db)]
 ) -> Envelope[MeetingState]:

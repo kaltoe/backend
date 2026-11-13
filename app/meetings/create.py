@@ -7,10 +7,11 @@
 from datetime import datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Body, Depends, Header
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api import docs
 from app.api.auth import create_access_token
 from app.api.errors import ApiError, ErrorCode
 from app.api.schemas import Envelope, ok
@@ -110,11 +111,25 @@ async def create(session: AsyncSession, body: CreateMeetingRequest, now: datetim
     return result
 
 
-@router.post("/meetings", status_code=201)
+@router.post(
+    "/meetings",
+    status_code=201,
+    summary="API-02 회의 생성 = 시작",
+    description=(
+        "셋업의 [회의 시작하기]. 만드는 즉시 회의와 타이머가 시작되고(첫 안건만 진행 중), 진행자 토큰(`accessToken`)과 "
+        '진행자 복구 키를 돌려줍니다. 진행자 이름은 "진행자"이고 초대 코드는 14일 뒤 만료됩니다.\n\n'
+        "`Idempotency-Key`(선택): 셋업에 들어올 때 만든 UUID를 보내면, 10분 안에 같은 키가 다시 와도 "
+        "회의를 새로 만들지 않고 처음 응답을 그대로 돌려줍니다."
+    ),
+    responses=docs.success(docs.CREATED, 201)
+    | docs.errors(
+        ErrorCode.VALIDATION_ERROR, ErrorCode.AGENDA_TIME_MISMATCH, ErrorCode.CONSENT_REQUIRED, field="title"
+    ),
+)
 async def create_meeting(
-    body: CreateMeetingRequest,
+    body: Annotated[CreateMeetingRequest, Body(openapi_examples=docs.CREATE_REQUEST)],
     session: Annotated[AsyncSession, Depends(get_db)],
-    idempotency_key: Annotated[str | None, Header(max_length=128)] = None,
+    idempotency_key: Annotated[str | None, Header(max_length=128, description="중복 생성 방지용 UUID(선택)")] = None,
 ) -> Envelope[CreatedMeeting]:
     if body.consent_agreed is not True:
         raise ApiError(ErrorCode.CONSENT_REQUIRED)
