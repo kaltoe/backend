@@ -147,6 +147,13 @@ class Agenda(Base):
         CheckConstraint("order_index >= 0", name="order_index"),
         CheckConstraint("allocated_minutes BETWEEN 1 AND 180", name="allocated_minutes"),
         CheckConstraint(one_of("status", AgendaStatus), name="status"),
+        # 진행 중 안건은 회의마다 하나뿐이다(current_agenda 가 이 행을 찾는다)
+        Index(
+            "uq_agendas_meeting_id_in_progress",
+            "meeting_id",
+            unique=True,
+            postgresql_where=text("status = 'IN_PROGRESS'"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
