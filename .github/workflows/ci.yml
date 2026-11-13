@@ -11,6 +11,19 @@ permissions: { contents: read }
 jobs:
   python:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: kaltoe
+          POSTGRES_PASSWORD: kaltoe
+          POSTGRES_DB: kaltoe
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U kaltoe"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://kaltoe:kaltoe@localhost:5432/kaltoe
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -93,12 +106,14 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ap-northeast-2
       # 회의룸 상태가 메모리에 있어 재시작 시 진행 중인 회의가 끊긴다
+      # 새 이미지로 마이그레이션을 먼저 적용하고, 실패하면 api 를 바꾸지 않는다
+      # ponytail: alembic.ini 가 이미지에 들어오기 전까지는 마이그레이션을 건너뛴다
       - name: 서버에 배포
         run: |
           id=$(aws ssm send-command \
             --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
             --document-name AWS-RunShellScript \
-            --parameters 'commands=["cd /opt/kaltoe && docker compose pull api && docker compose up -d api && docker image prune -f"]' \
+            --parameters 'commands=["cd /opt/kaltoe && docker compose pull api && docker compose run --rm api sh -c \"[ ! -f alembic.ini ] || alembic upgrade head\" && docker compose up -d api && docker image prune -f"]' \
             --query Command.CommandId --output text)
           aws ssm wait command-executed --command-id "$id" --instance-id "${{ vars.EC2_INSTANCE_ID }}" || {
             aws ssm get-command-invocation --command-id "$id" --instance-id "${{ vars.EC2_INSTANCE_ID }}" \
