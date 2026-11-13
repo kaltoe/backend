@@ -98,6 +98,13 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_agendas")),
         sa.UniqueConstraint("meeting_id", "order_index", name=op.f("uq_agendas_meeting_id_order_index")),
     )
+    op.create_index(
+        "uq_agendas_meeting_id_in_progress",
+        "agendas",
+        ["meeting_id"],
+        unique=True,
+        postgresql_where=sa.text("status = 'IN_PROGRESS'"),
+    )
     op.create_table(
         "participants",
         sa.Column("id", sa.BigInteger(), nullable=False),
@@ -184,6 +191,7 @@ def downgrade() -> None:
     op.drop_table("share_links")
     op.drop_table("offtopic_events")
     op.drop_table("participants")
+    op.drop_index("uq_agendas_meeting_id_in_progress", table_name="agendas")
     op.drop_table("agendas")
     op.drop_table("meetings")
     # ### end Alembic commands ###
