@@ -13,12 +13,13 @@
 import re
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 from pydantic import Field, ValidationInfo, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api import docs
 from app.api.auth import create_access_token
 from app.api.errors import VALIDATION_MESSAGE, ApiError, ErrorCode
 from app.api.rate_limit import limit_entry_requests
@@ -152,9 +153,36 @@ async def _new_member(session: AsyncSession, meeting_id: str, name: str, passwor
     return member
 
 
-@router.post("/meetings/{meeting_id}/sign-in", dependencies=[Depends(limit_entry_requests)])
+@router.post(
+    "/meetings/{meeting_id}/sign-in",
+    dependencies=[Depends(limit_entry_requests)],
+    summary="API-03 참여 Sign In",
+    description=(
+        "참여 화면의 [회의 입장하기]. 참가자 토큰(`accessToken`)을 발급합니다.\n\n"
+        "- 이름(1~10자)만 보내면 새 참가자입니다. 비밀번호(숫자 4자리)를 함께 걸면 같은 이름·비밀번호로 다른 기기에서 "
+        "이어받을 수 있습니다(`isReturning: true`).\n"
+        "- `hostRecoveryKey`를 보내면 이름·비밀번호는 보지 않고 진행자 권한을 되찾습니다.\n"
+        "- 비밀번호나 복구 키를 5번 연속 틀리면 5분 동안 429 `TOO_MANY_ATTEMPTS`입니다. "
+        "같은 IP에서 1분에 120번을 넘기면 429 `TOO_MANY_REQUESTS`입니다."
+    ),
+    responses=docs.success(docs.SIGNED_IN)
+    | docs.errors(
+        ErrorCode.VALIDATION_ERROR,
+        ErrorCode.INVALID_PASSWORD,
+        ErrorCode.INVALID_RECOVERY_KEY,
+        ErrorCode.MEETING_NOT_FOUND,
+        ErrorCode.NAME_TAKEN,
+        ErrorCode.MEETING_EXPIRED,
+        ErrorCode.MEETING_ENDED,
+        ErrorCode.TOO_MANY_REQUESTS,
+        ErrorCode.TOO_MANY_ATTEMPTS,
+        field="name",
+    ),
+)
 async def sign_in(
-    meeting_id: str, body: SignInRequest, session: Annotated[AsyncSession, Depends(get_db)]
+    meeting_id: str,
+    body: Annotated[SignInRequest, Body(openapi_examples=docs.SIGN_IN_REQUEST)],
+    session: Annotated[AsyncSession, Depends(get_db)],
 ) -> Envelope[SignedIn]:
     meeting = ensure_joinable(await find_meeting(session, meeting_id), utcnow())
 
