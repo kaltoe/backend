@@ -52,7 +52,8 @@ async def authenticate(sessions: SessionFactory, meeting_id: str, token: str | N
         participant = await session.get(Participant, caller.participant_id) if caller else None
         if participant is None or participant.meeting_id != meeting_id:
             return CLOSE_UNAUTHORIZED
-        if meeting.status == MeetingStatus.ENDED:
+        # 만료(생성 14일 후)도 API-01·03 의 410 처럼 더는 들어올 수 없는 회의로 본다
+        if meeting.status == MeetingStatus.ENDED or meeting.expires_at <= utcnow():
             return CLOSE_ENDED
         return Member(participant_id=participant.id, name=participant.name, role=participant.role)
 
@@ -122,7 +123,7 @@ async def status_channel(
         await websocket.close(code=result)
         return
 
-    connection = Connection(websocket=websocket, member=result)
+    connection = Connection(websocket=websocket, member=result, reader=asyncio.current_task())
     first = manager.add(meeting_id, connection, room_task=lambda: timer_sync_loop(sessions, meeting_id))
     if first:
         await manager.broadcast(
