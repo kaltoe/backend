@@ -18,6 +18,8 @@ RUN useradd --system --uid 1001 app
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY app ./app
+# 마이그레이션: docker compose exec api alembic upgrade head
+COPY alembic.ini ./
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
