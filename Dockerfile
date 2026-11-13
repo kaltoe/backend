@@ -14,6 +14,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # 실행 단계: .venv 와 앱 코드만 담는다
 FROM python:3.13-slim
 
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 RUN useradd --system --uid 1001 app
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
