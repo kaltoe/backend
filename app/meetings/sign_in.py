@@ -94,11 +94,10 @@ def normalize_recovery_key(raw: str) -> str | None:
 
 async def recover_host(session: AsyncSession, meeting_id: str, key_hash: str, raw_key: str) -> Participant:
     lock_key = (meeting_id,)
-    if recovery_key_failures.is_locked(lock_key):
+    if not recovery_key_failures.attempt(lock_key):
         raise ApiError(ErrorCode.TOO_MANY_ATTEMPTS)
     key = normalize_recovery_key(raw_key)
     if key is None or not await verify_secret(key, key_hash):
-        recovery_key_failures.fail(lock_key)
         raise ApiError(ErrorCode.INVALID_RECOVERY_KEY)
     recovery_key_failures.succeed(lock_key)
     host = await session.scalar(
@@ -123,10 +122,9 @@ async def sign_in_by_name(
 
     if existing.password_hash is not None:  # 규칙 2
         lock_key = (meeting_id, name)
-        if password_failures.is_locked(lock_key):
+        if not password_failures.attempt(lock_key):
             raise ApiError(ErrorCode.TOO_MANY_ATTEMPTS)
         if password is None or not await verify_secret(password, existing.password_hash):
-            password_failures.fail(lock_key)
             raise ApiError(ErrorCode.INVALID_PASSWORD)
         password_failures.succeed(lock_key)
         return existing, True
