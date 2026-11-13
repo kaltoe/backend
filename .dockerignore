@@ -1,10 +1,11 @@
-# 이미지에는 pyproject.toml, uv.lock, .python-version, app/ 만 필요하다
+# 이미지에는 pyproject.toml, uv.lock, .python-version, alembic.ini, app/ 만 필요하다
 *
 
 !pyproject.toml
 !uv.lock
 !.python-version
 !app/
+!alembic.ini
 
 **/__pycache__
 **/*.pyc
