@@ -15,7 +15,7 @@ from app.db.models import Utterance
 from app.db.session import SessionFactory
 from app.realtime.manager import manager
 from app.stt import live
-from tests.test_agendas import bearer, create
+from tests.test_agendas import THREE_AGENDAS, bearer, create
 from tests.test_realtime import room
 
 LOUD = array("h", [1000] * 4000).tobytes()  # 250ms
@@ -87,7 +87,7 @@ def events(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Any]]:
 async def _forget_lives() -> AsyncIterator[None]:
     yield
     for each in live.lives.values():
-        each.ticker.cancel()
+        await each.end()
     live.lives.clear()
 
 
@@ -281,7 +281,7 @@ async def test_open_failure_is_delayed_and_retried(
     assert calls == 2
 
 
-async def test_audio_channel_feeds_in_person_only(
+async def test_audio_channel_feeds_by_meeting_mode(
     app: FastAPI, clock: Clock, opened: list[FakeSession], tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(get_settings(), "recordings_dir", str(tmp_path))
@@ -316,5 +316,83 @@ async def test_audio_channel_feeds_in_person_only(
         ) as ws:
             await ws.send_json(start)
             await ws.send_bytes(LOUD)
-            await asyncio.sleep(0.2)
-        assert remote["meetingId"] not in live.lives  # 비대면은 #22
+            await until(lambda: len(opened) == 2 and opened[1].sent == [len(LOUD)])
+        remote_live = live.lives[remote["meetingId"]]
+        assert isinstance(remote_live, live.Remote)  # 비대면은 기기별 세션
+        host = remote["host"]
+        assert remote_live.devices[host["participantId"]].speaker == (host["participantId"], host["name"])
+
+
+def final(seq: int, start_at: int, text: str) -> dict[str, Any]:
+    return {"seq": seq, "start_at": start_at, "duration": 300, "final": True, "alternatives": [{"text": text}]}
+
+
+async def test_remote_opens_a_session_per_device(
+    client: httpx.AsyncClient,
+    session: AsyncSession,
+    sessions: SessionFactory,
+    clock: Clock,
+    opened: list[FakeSession],
+    events: list[tuple[str, Any]],
+) -> None:
+    created = (await client.post("/api/v1/meetings", json=THREE_AGENDAS | {"meetingMode": "REMOTE"})).json()["data"]
+    code = created["meetingId"]
+    boss = (created["host"]["participantId"], created["host"]["name"])
+    joined = (await client.post(f"/api/v1/meetings/{code}/sign-in", json={"name": "민지"})).json()["data"]
+    minji = (joined["participantId"], "민지")
+
+    async def frame(who: tuple[int, str], at_ms: int) -> None:
+        await live.feed(sessions, code, who[0], who == boss, LOUD, at_ms * MS, who[1])
+
+    await frame(boss, 10_000)
+    await frame(minji, 10_000)
+    assert len(opened) == 2  # 기기마다 세션
+    assert sources(events) == [("RECORDING", None)]  # 기준 기기 없음
+
+    # 자막에 말한 사람을 붙이고 utterances 에 저장한다(테스트는 DB 세션 하나라 하나씩)
+    opened[0].queue.put_nowait(final(0, 0, "안녕하세요"))
+    await until(lambda: len(of(events, "transcript.final")) == 1)
+    opened[1].queue.put_nowait(final(0, 100, "네 반가워요"))
+    await until(lambda: len(of(events, "transcript.final")) == 2)
+    finals = of(events, "transcript.final")
+    assert [(f.segment_key, f.participant_id, f.speaker_name, f.offset_ms) for f in finals] == [
+        (f"{boss[0]}-1-0", boss[0], boss[1], 10_000),
+        (f"{minji[0]}-1-0", minji[0], "민지", 10_100),
+    ]
+    saved = await session.get(Utterance, finals[1].utterance_id)
+    assert saved is not None
+    assert (saved.participant_id, saved.speaker_label, saved.source) == (minji[0], "민지", "REALTIME")
+
+    res = await client.get(f"/api/v1/meetings/{code}/state", headers=bearer(created["accessToken"]))
+    data = res.json()["data"]
+    assert [(t["speakerName"], t["text"]) for t in data["transcripts"]] == [
+        (boss[1], "안녕하세요"),
+        ("민지", "네 반가워요"),
+    ]
+    assert data["recording"] == {"status": "RECORDING", "sourceParticipantId": None}
+
+    # 민지 기기만 조용해져 50초가 지나면 민지 세션만 닫힌다
+    remote = live.lives[code]
+    for t in range(1, 56):
+        clock.now = 1000 + t
+        await frame(boss, 10_000 + t * 1000)
+        if t in (4, 55):
+            await remote.tick()
+    assert opened[1].sent[-1] == "EOS"
+    assert "EOS" not in opened[0].sent
+    assert sources(events) == [("RECORDING", None)]  # 진행자 기기가 아직 녹음 중
+
+    # sttStatus: 마이크가 켜진 기기 중 하나라도 OK 면 OK
+    assert of(events, "stt.status")[-1].state == "DELAYED"  # 둘 다 OK 가 아니다(진행자 결과 없음, 민지 무음)
+    opened[0].queue.put_nowait(
+        {"seq": 1, "start_at": 0, "duration": 0, "final": False, "alternatives": [{"text": "음"}]}
+    )
+    await until(lambda: remote.devices[boss[0]].last_result == clock.now)
+    await remote.tick()
+    assert remote.devices[minji[0]].stt == "NO_AUDIO"
+    assert of(events, "stt.status")[-1].state == "OK"
+
+    # 일시 정지는 모든 기기 세션을 닫는다
+    await live.pause(code)
+    assert opened[0].sent[-1] == "EOS"
+    assert sources(events)[-1] == ("PAUSED", None)

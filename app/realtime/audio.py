@@ -170,9 +170,9 @@ async def audio_channel(
             pcm = pcm[: len(pcm) // 2 * 2]  # 샘플(2바이트) 단위로 맞춘다
             at, late = track.place(len(pcm), timer.timeline_ms(meeting, timer.utcnow()))
             await asyncio.to_thread(write_pcm, folder / f"{pid}.wav", at, pcm)
-            if not late and meeting.meeting_mode == MeetingMode.IN_PERSON:  # 늦은 소리는 자막에 넣지 않는다
-                await captions.feed(sessions, meeting_id, pid, member.role == Role.HOST, pcm, at)
-            # ponytail: 비대면(#22)은 기기별 STT 를 여기서 부른다
+            if not late:  # 늦은 소리는 자막에 넣지 않는다
+                remote = member.name if meeting.meeting_mode == MeetingMode.REMOTE else None
+                await captions.feed(sessions, meeting_id, pid, member.role == Role.HOST, pcm, at, remote)
     finally:
         current = audio_sockets.get(meeting_id, {})
         if current.get(pid) is websocket:

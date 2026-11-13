@@ -127,9 +127,19 @@ class Run:
 
 
 class Live:
-    def __init__(self, meeting_id: str, sessions: SessionFactory) -> None:
+    def __init__(
+        self,
+        meeting_id: str,
+        sessions: SessionFactory,
+        speaker: tuple[int, str] | None = None,
+        notify: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
+        """speaker 가 있으면 비대면 기기 하나의 세션이다. 자막에 그 참가자를 붙이고,
+        상태가 바뀌면 직접 보내지 않고 notify 로 회의 전체 상태(Remote)를 다시 계산하게 한다."""
         self.meeting_id = meeting_id
         self.sessions = sessions
+        self.speaker = speaker
+        self.notify = notify
         self.devices: dict[int, Device] = {}
         self.source: int | None = None
         self.recording: RecordingState = "INTERRUPTED"
@@ -239,6 +249,9 @@ class Live:
 
     async def set_recording(self, status: RecordingState) -> None:
         self.recording = status
+        if self.notify is not None:
+            await self.notify()
+            return
         await manager.broadcast(
             self.meeting_id,
             "recording.status",
@@ -295,10 +308,15 @@ class Live:
         text = str(alternatives[0].get("text") or "").strip()
         if not text:
             return
+        speaker_id, speaker_name = self.speaker or (None, None)
         key = f"{run.number}-{message['seq']}"
+        if speaker_id is not None:  # 비대면은 기기마다 세션이 있어 참가자로 구분한다
+            key = f"{speaker_id}-{key}"
         offset = run.offset_ms(int(message["start_at"]))
         if not message.get("final"):
-            partial = TranscriptPartial(segment_key=key, text=text, offset_ms=offset)
+            partial = TranscriptPartial(
+                segment_key=key, text=text, offset_ms=offset, participant_id=speaker_id, speaker_name=speaker_name
+            )
             await manager.broadcast(self.meeting_id, "transcript.partial", partial)
             return
 
@@ -309,7 +327,9 @@ class Live:
             utterance = Utterance(
                 meeting_id=self.meeting_id,
                 agenda_id=self.agenda_id,
+                participant_id=speaker_id,
                 source=UtteranceSource.REALTIME.value,
+                speaker_label=speaker_name,
                 text=text,
                 offset_ms=offset,
                 duration_ms=int(message.get("duration") or 0),
@@ -320,7 +340,13 @@ class Live:
             await session.commit()
         self.last_final = clock()
         final = TranscriptFinal(
-            segment_key=key, utterance_id=utterance_id, text=text, offset_ms=offset, agenda_id=self.agenda_id
+            segment_key=key,
+            utterance_id=utterance_id,
+            text=text,
+            offset_ms=offset,
+            agenda_id=self.agenda_id,
+            participant_id=speaker_id,
+            speaker_name=speaker_name,
         )
         await manager.broadcast(self.meeting_id, "transcript.final", final)
 
@@ -334,20 +360,95 @@ class Live:
             state = "NO_AUDIO"
         if state != self.stt:
             self.stt = state
+            if self.notify is not None:
+                await self.notify()
+                return
             await manager.broadcast(self.meeting_id, "stt.status", SttStatusChanged(state=state))
 
 
+class Remote:
+    """비대면(REMOTE) 회의(#22). 기준 기기를 고르지 않고 소리를 보내는 기기마다 리턴제로 세션(Live)을 따로 연다.
+
+    세션 규칙(일시 정지, 그 기기 소리 없음 50초, 종료)은 기기마다 따로다. 회의 전체 상태는 기기 상태를 모아 정한다.
+    - recording: 한 기기라도 RECORDING 이면 RECORDING, 모두 PAUSED 면 PAUSED, 아니면 INTERRUPTED.
+      sourceParticipantId 는 null(기준 기기 없음)
+    - sttStatus: 마이크가 켜진 기기 중 하나라도 OK 면 OK, 아니면 DELAYED, 그다음 NO_AUDIO
+    """
+
+    source: int | None = None
+
+    def __init__(self, meeting_id: str, sessions: SessionFactory) -> None:
+        self.meeting_id = meeting_id
+        self.sessions = sessions
+        self.devices: dict[int, Live] = {}
+        self.recording: RecordingState = "INTERRUPTED"
+        self.stt: SttState = "OK"
+
+    async def feed(self, participant_id: int, name: str, pcm: bytes, at: int) -> None:
+        device = self.devices.get(participant_id)
+        if device is None:
+            device = Live(self.meeting_id, self.sessions, (participant_id, name), self.refresh)
+            self.devices[participant_id] = device
+        await device.feed(participant_id, False, pcm, at)
+
+    async def leave(self, participant_id: int) -> None:
+        if (device := self.devices.get(participant_id)) is not None:
+            await device.leave(participant_id)
+
+    async def pause(self) -> None:
+        for device in list(self.devices.values()):
+            await device.pause()
+
+    async def end(self) -> None:
+        for device in list(self.devices.values()):
+            await device.end()
+
+    async def tick(self) -> None:
+        for device in list(self.devices.values()):
+            await device.tick()
+
+    async def refresh(self) -> None:
+        states = {d.recording for d in self.devices.values()}
+        recording: RecordingState = "INTERRUPTED"
+        if "RECORDING" in states:
+            recording = "RECORDING"
+        elif states == {"PAUSED"}:
+            recording = "PAUSED"
+        if recording != self.recording:
+            self.recording = recording
+            changed = RecordingStatusChanged(status=recording, source_participant_id=None)
+            await manager.broadcast(self.meeting_id, "recording.status", changed)
+
+        mic_on = {d.stt for p, d in self.devices.items() if manager.mic_state(self.meeting_id, p) == MicState.ON}
+        stt: SttState = "OK"
+        if mic_on and "OK" not in mic_on:
+            stt = "DELAYED" if "DELAYED" in mic_on else "NO_AUDIO"
+        if stt != self.stt:
+            self.stt = stt
+            await manager.broadcast(self.meeting_id, "stt.status", SttStatusChanged(state=stt))
+
+
 # 회의 코드 → 실시간 자막 상태
-lives: dict[str, Live] = {}
+lives: dict[str, Live | Remote] = {}
 
 
 async def feed(
-    sessions: SessionFactory, meeting_id: str, participant_id: int, is_host: bool, pcm: bytes, at: int
+    sessions: SessionFactory,
+    meeting_id: str,
+    participant_id: int,
+    is_host: bool,
+    pcm: bytes,
+    at: int,
+    remote_name: str | None = None,
 ) -> None:
+    """실시간으로 온 청크. 비대면 회의면 remote_name 에 그 참가자 이름을 넘긴다."""
     live = lives.get(meeting_id)
     if live is None:
-        live = lives[meeting_id] = Live(meeting_id, sessions)
-    await live.feed(participant_id, is_host, pcm, at)
+        live = lives[meeting_id] = Live(meeting_id, sessions) if remote_name is None else Remote(meeting_id, sessions)
+    if isinstance(live, Remote):
+        await live.feed(participant_id, remote_name or "", pcm, at)
+    else:
+        await live.feed(participant_id, is_host, pcm, at)
 
 
 async def leave(meeting_id: str, participant_id: int) -> None:
