@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # PostgreSQL (asyncpg). 로컬 기본값은 README 의 docker run 명령과 같다
     database_url: str = "postgresql+asyncpg://kaltoe:kaltoe@localhost:5432/kaltoe"
 
+    # 기기별 녹음(WS-02) 폴더. 회의마다 하위 폴더를 만든다
+    recordings_dir: str = "recordings"
+
     # 참가자 토큰(JWT) 서명 키. 비우면 프로세스마다 임시 키를 만든다(재시작하면 토큰 무효)
     jwt_secret: str = ""
 

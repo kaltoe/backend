@@ -85,5 +85,7 @@ def error_event(code: ErrorCode) -> dict[str, Any]:
 # 연결 오류는 error 이벤트가 아니라 close code 로 알린다 (WS-01 Status)
 CLOSE_UNAUTHORIZED = 4401  # 토큰 없음·만료. 재연결 안 함
 CLOSE_NOT_FOUND = 4404  # 회의 없음
+CLOSE_REPLACED = 4409  # WS-02 전용. 같은 참가자가 다른 기기에서 음성 연결해 이전 연결을 닫음
 CLOSE_ENDED = 4410  # 회의 종료. 재연결 안 함
+CLOSE_BAD_AUDIO_START = 1008  # WS-02 audio.start 형식이 틀렸거나 startOffsetMs 가 버퍼 범위(지금 ~ 10분 전) 밖
 CLOSE_HEARTBEAT_TIMEOUT = 1001  # 60초 동안 메시지가 없음. 클라이언트는 다시 연결해도 된다
