@@ -29,6 +29,7 @@ from app.meetings.schemas import AgendaOut, InviteOut, ParticipantOut
 from app.meetings.timer import TimerSnapshot, build_snapshot, utcnow
 from app.realtime.events import MicState
 from app.realtime.manager import manager
+from app.stt import live
 
 router = APIRouter()
 
@@ -142,6 +143,16 @@ async def get_state(
     def mic(participant_id: int) -> MicState:
         return manager.mic_state(meeting_id, participant_id)
 
+    live_status = live.status(meeting_id)
+    if live_status is None:  # 아직 소리가 오지 않았다(비대면은 #22)
+        stt_status: SttStatus = "OK"
+        recording = Recording(
+            status="PAUSED" if meeting.status == MeetingStatus.PAUSED else "RECORDING", source_participant_id=None
+        )
+    else:
+        stt_status, recording_status, source = live_status
+        recording = Recording(status=recording_status, source_participant_id=source)
+
     return ok(
         MeetingState(
             meeting_id=meeting.id,
@@ -177,13 +188,9 @@ async def get_state(
                 for p in participants
             ],
             transcripts=transcripts,
-            # ponytail: 고정 기본값. #21/#22(sttStatus·recording), #23(offtopic*)이
-            # 메모리 상태를 만들면 거기서 읽는다
-            stt_status="OK",
-            recording=Recording(
-                status="PAUSED" if meeting.status == MeetingStatus.PAUSED else "RECORDING",
-                source_participant_id=None,
-            ),
+            stt_status=stt_status,
+            recording=recording,
+            # ponytail: 고정 기본값. #23(offtopic*)이 메모리 상태를 만들면 거기서 읽는다
             offtopic_status="OK",
             active_offtopic_event=None,
         )

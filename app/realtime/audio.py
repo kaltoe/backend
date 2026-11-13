@@ -24,12 +24,13 @@ from pydantic import StrictInt, ValidationError
 
 from app.api.schemas import CamelModel
 from app.config import get_settings
-from app.db.models import Meeting, MeetingStatus
+from app.db.models import Meeting, MeetingMode, MeetingStatus, Role
 from app.db.session import SessionFactory, get_session_factory
 from app.meetings import timer
 from app.meetings.entry import find_meeting
 from app.realtime.events import CLOSE_BAD_AUDIO_START, CLOSE_ENDED, CLOSE_NOT_FOUND, CLOSE_REPLACED
 from app.realtime.ws import authenticate, receive_text
+from app.stt import live as captions
 
 router = APIRouter(tags=["realtime"])
 
@@ -169,12 +170,15 @@ async def audio_channel(
             pcm = pcm[: len(pcm) // 2 * 2]  # 샘플(2바이트) 단위로 맞춘다
             at, late = track.place(len(pcm), timer.timeline_ms(meeting, timer.utcnow()))
             await asyncio.to_thread(write_pcm, folder / f"{pid}.wav", at, pcm)
-            # ponytail: STT 연결점. late 가 아닌 청크를 STT 라우터에 넘긴다(대면 #21 기준 기기 / 비대면 #22 기기별)
+            if not late and meeting.meeting_mode == MeetingMode.IN_PERSON:  # 늦은 소리는 자막에 넣지 않는다
+                await captions.feed(sessions, meeting_id, pid, member.role == Role.HOST, pcm, at)
+            # ponytail: 비대면(#22)은 기기별 STT 를 여기서 부른다
     finally:
         current = audio_sockets.get(meeting_id, {})
         if current.get(pid) is websocket:
             del current[pid]
             if not current:
                 audio_sockets.pop(meeting_id, None)
+            await captions.leave(meeting_id, pid)
         if track.spans:
             await asyncio.to_thread(save_spans, folder / f"{pid}.json", track.spans)

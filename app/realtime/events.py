@@ -6,7 +6,7 @@ data 는 dict 나 CamelModel. 시각은 한국 시간(+09:00) ISO 8601.
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic_core import to_jsonable_python
 
@@ -65,6 +65,37 @@ class MeetingEnded(CamelModel):
     ended_at: KstDatetime
     ended_by: EndedBy
     actual_duration_seconds: int | None
+
+
+SttState = Literal["OK", "DELAYED", "NO_AUDIO"]
+RecordingState = Literal["RECORDING", "INTERRUPTED", "PAUSED"]
+
+
+class TranscriptPartial(CamelModel):
+    segment_key: str  # transcript.final 이 같은 키로 이 중간 결과를 바꾼다
+    text: str
+    offset_ms: int
+    participant_id: int | None = None  # 대면 회의는 null
+    speaker_name: str | None = None
+
+
+class TranscriptFinal(CamelModel):
+    segment_key: str
+    utterance_id: int
+    text: str
+    offset_ms: int
+    agenda_id: int | None
+    participant_id: int | None = None
+    speaker_name: str | None = None
+
+
+class SttStatusChanged(CamelModel):
+    state: SttState
+
+
+class RecordingStatusChanged(CamelModel):
+    status: RecordingState
+    source_participant_id: int | None
 
 
 class ErrorCode(StrEnum):

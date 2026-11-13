@@ -101,7 +101,6 @@ async def next_agenda(
     )
     await session.commit()
 
-    # ponytail: was_paused 면 #21/#22 가 닫아 둔 리턴제로 세션을 다시 열고,
-    # #23 이 사담 판정을 재개하는 호출을 여기에 붙인다
+    # ponytail: was_paused 면 #23 이 사담 판정을 재개하는 호출을 여기에 붙인다(리턴제로 세션은 첫 소리에 열린다)
     await manager.broadcast(meeting_id, "agenda.changed", changed)
     return ok(changed)
