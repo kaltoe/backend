@@ -114,3 +114,20 @@ async def test_participant_name_unique_per_meeting(session: AsyncSession) -> Non
     session.add(Participant(meeting_id="K7Q2MX", name="민지", role="MEMBER"))
     with pytest.raises(IntegrityError):
         await session.flush()
+
+
+async def test_one_in_progress_agenda_per_meeting(session: AsyncSession) -> None:
+    session.add(meeting())
+    await session.flush()
+    session.add_all(
+        [
+            Agenda(meeting_id="K7Q2MX", order_index=0, title="A", allocated_minutes=10, status="IN_PROGRESS"),
+            Agenda(meeting_id="K7Q2MX", order_index=1, title="B", allocated_minutes=10, status="DONE"),
+            Agenda(meeting_id="K7Q2MX", order_index=2, title="C", allocated_minutes=10, status="DONE"),
+        ]
+    )
+    await session.flush()  # 끝난 안건은 여러 개여도 된다
+
+    session.add(Agenda(meeting_id="K7Q2MX", order_index=3, title="D", allocated_minutes=10, status="IN_PROGRESS"))
+    with pytest.raises(IntegrityError):
+        await session.flush()
