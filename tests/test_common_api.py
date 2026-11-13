@@ -211,3 +211,20 @@ def test_token_signed_with_other_key_is_rejected() -> None:
         algorithm="HS256",
     )
     assert read_token(forged, "K7Q2MX") is None
+
+
+def test_app_refuses_to_start_without_jwt_secret_outside_local(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import main
+    from app.config import get_settings
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("JWT_SECRET", "")
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(RuntimeError, match="JWT_SECRET"):
+            main.create_app()
+        monkeypatch.setenv("JWT_SECRET", "x" * 48)
+        get_settings.cache_clear()
+        main.create_app()
+    finally:
+        get_settings.cache_clear()
