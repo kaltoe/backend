@@ -13,7 +13,8 @@ from functools import lru_cache
 from typing import Annotated, Literal
 
 import jwt
-from fastapi import Depends, Header
+from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.api.errors import ApiError, ErrorCode
 from app.config import get_settings
@@ -74,10 +75,14 @@ def read_token(token: str, meeting_id: str) -> Caller | None:
     return Caller(participant_id=participant_id, meeting_id=meeting_id, role=payload["role"])
 
 
-def get_caller(meeting_id: str, authorization: Annotated[str | None, Header()] = None) -> Caller:
+bearer_scheme = HTTPBearer(auto_error=False)  # Swagger Authorize 버튼. 없을 때 기본 403 대신 우리 401 을 쓴다
+
+
+def get_caller(
+    meeting_id: str, credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)] = None
+) -> Caller:
     """경로의 {meetingId} 회의 참가자만 통과시킨다."""
-    scheme, _, token = (authorization or "").partition(" ")
-    caller = read_token(token, meeting_id) if scheme.lower() == "bearer" and token else None
+    caller = read_token(credentials.credentials, meeting_id) if credentials else None
     if caller is None:
         raise ApiError(ErrorCode.UNAUTHORIZED)
     return caller
