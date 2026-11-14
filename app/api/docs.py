@@ -13,7 +13,7 @@ from app.api.errors import VALIDATION_MESSAGE, ErrorCode, error_body
 
 NOTION_API = "https://app.notion.com/p/API-4113a42323cb8059ae56d1b3d7379245"
 
-SETUP, ENTRY, LIVE, HEALTH = "회의 셋업", "초대·입장", "라이브", "상태 확인"
+SETUP, ENTRY, LIVE, RESULT, HEALTH = "회의 셋업", "초대·입장", "라이브", "회의 결과", "상태 확인"
 
 TAGS = [
     {"name": SETUP, "description": "회의 생성(= 시작)과 안건. 토큰 없이 호출합니다."},
@@ -26,6 +26,7 @@ TAGS = [
         "description": "라이브 화면 복원과 진행자 제어(일시 정지·재개·안건 전환·종료). 참가자 토큰이 필요하고, "
         "제어 API는 진행자만 호출할 수 있습니다. 결과는 WS-01로 전원에게 퍼집니다.",
     },
+    {"name": RESULT, "description": "회의가 끝난 뒤 결과 화면(요약 등). 참가자 토큰이 필요합니다."},
     {"name": HEALTH, "description": "서버 상태 확인(배포·모니터링용)."},
 ]
 
@@ -301,4 +302,23 @@ ENDED = {
     "endedAt": "2026-11-03T14:28:00+09:00",
     "endedBy": "HOST",
     "actualDurationSeconds": 1600,
+}
+
+TRANSCRIPTS = {
+    "source": "POSTPROCESS",
+    "groups": [
+        {
+            "agendaId": 12,
+            "orderIndex": 0,
+            "title": "지난주 캠페인 성과 리뷰",
+            "items": [
+                {
+                    "utteranceId": 901,
+                    "speakerLabel": "화자 2",
+                    "text": "지난주 캠페인 CTR이 2.4%로 목표보다 조금 높게 나왔어요.",
+                    "offsetMs": 95000,
+                }
+            ],
+        }
+    ],
 }
