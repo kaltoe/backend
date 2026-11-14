@@ -11,6 +11,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api import docs
 from app.api.errors import ApiError, ErrorCode
 from app.api.rate_limit import limit_entry_requests
 from app.api.schemas import CamelModel, Envelope, KstDatetime, ok
@@ -51,7 +52,20 @@ async def find_meeting(session: AsyncSession, meeting_id: str) -> Meeting | None
     return await session.get(Meeting, meeting_id)
 
 
-@router.get("/meetings/{meeting_id}/entry", dependencies=[Depends(limit_entry_requests)])
+@router.get(
+    "/meetings/{meeting_id}/entry",
+    dependencies=[Depends(limit_entry_requests)],
+    summary="API-01 회의 입장 정보 조회",
+    description=(
+        "메인에서 코드나 링크를 넣으면 참여 화면의 제목과 상태 배지를 보여 줍니다. 코드는 대문자 6자리입니다"
+        "(프론트가 링크의 마지막 조각을 대문자로 바꿔 보냄). `status`는 진행 중·일시 정지만 오고, "
+        "`connectedCount`는 지금 접속 중인 인원입니다. 같은 IP에서 1분에 120번을 넘기면 429입니다."
+    ),
+    responses=docs.success(docs.ENTRY_INFO)
+    | docs.errors(
+        ErrorCode.MEETING_NOT_FOUND, ErrorCode.MEETING_EXPIRED, ErrorCode.MEETING_ENDED, ErrorCode.TOO_MANY_REQUESTS
+    ),
+)
 async def get_entry_info(meeting_id: str, session: Annotated[AsyncSession, Depends(get_db)]) -> Envelope[EntryInfo]:
     meeting = ensure_joinable(await find_meeting(session, meeting_id), utcnow())
     return ok(

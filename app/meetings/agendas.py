@@ -8,10 +8,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api import docs
 from app.api.auth import CurrentHost
 from app.api.errors import ApiError, ErrorCode
 from app.api.schemas import CamelModel, Envelope, ok
@@ -49,10 +50,28 @@ class AgendaChanged(CamelModel):
     timer: TimerSnapshot
 
 
-@router.post("/meetings/{meeting_id}/agendas/next")
+@router.post(
+    "/meetings/{meeting_id}/agendas/next",
+    summary="API-07 다음 안건으로 전환",
+    description=(
+        "[다음 안건으로] 확인. 진행자만 호출할 수 있습니다. `fromAgendaId`는 지금 진행 중인 안건이어야 하고, "
+        "다르면 409 `AGENDA_CHANGED`입니다(API-04로 화면만 다시 맞춤). 일시 정지 중이면 먼저 재개한 뒤 넘깁니다. "
+        "지금 안건을 끝내고 다음 안건을 시작하며, 전원에게 WS-01 `agenda.changed`를 보냅니다."
+    ),
+    responses=docs.success(docs.AGENDA_CHANGED)
+    | docs.errors(
+        ErrorCode.VALIDATION_ERROR,
+        ErrorCode.UNAUTHORIZED,
+        ErrorCode.HOST_ONLY,
+        ErrorCode.LAST_AGENDA,
+        ErrorCode.AGENDA_CHANGED,
+        ErrorCode.MEETING_ENDED,
+        field="fromAgendaId",
+    ),
+)
 async def next_agenda(
     meeting_id: str,
-    body: NextAgendaRequest,
+    body: Annotated[NextAgendaRequest, Body(openapi_examples=docs.NEXT_REQUEST)],
     host: CurrentHost,
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> Envelope[AgendaChanged]:
