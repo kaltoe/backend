@@ -30,10 +30,6 @@ class Settings(BaseSettings):
     rtzr_client_id: str = ""
     rtzr_client_secret: str = ""
 
-    # DB · 인증
-    database_url: str = "postgresql://kaltoe:kaltoe@localhost:5432/kaltoe"
-    jwt_secret: str = ""
-
     # 녹음 저장 — S3 는 EC2 인스턴스 역할로 인증하므로 액세스 키를 두지 않는다
     s3_bucket: str = "kaltoe-recordings"
     aws_region: str = "ap-northeast-2"
@@ -47,9 +43,6 @@ class Settings(BaseSettings):
     # CLOVA 결과 콜백 (INT-01)
     clova_callback_secret: str = ""
     clova_callback_url: str = "https://api.wacaw.shop/api/v1/internal/clova/callback"
-
-    # 초대 …/m/{code} · 공유 …/s/{shareId} 링크의 앞부분
-    frontend_base_url: str = "http://localhost:3000"
 
     @property
     def cors_origin_list(self) -> list[str]:
