@@ -9,6 +9,7 @@ import os
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -27,6 +28,7 @@ from app.meetings import codes
 from app.meetings.attempts import password_failures, recovery_key_failures
 from app.meetings.idempotency import create_meeting_cache
 from app.realtime.manager import manager
+from app.stt import live
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -104,6 +106,41 @@ async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
 def ws_client(app: FastAPI) -> httpx.AsyncClient:
     """WebSocket 테스트용 클라이언트. 태스크 그룹을 열므로 픽스처가 아니라 테스트 안에서 async with 로 쓴다."""
     return httpx.AsyncClient(transport=ASGIWebSocketTransport(app=app), base_url="http://test")
+
+
+class SilentSession:
+    """소리는 받고 결과는 보내지 않는 리턴제로 세션. 테스트가 실제 서버에 접속하지 않게 한다."""
+
+    def __init__(self) -> None:
+        self.closed = asyncio.Event()
+
+    async def send(self, pcm: bytes) -> None:
+        pass
+
+    async def finalize(self) -> None:
+        pass
+
+    async def close(self) -> None:
+        self.closed.set()
+
+    async def results(self) -> AsyncIterator[dict[str, Any]]:
+        await self.closed.wait()
+        return
+        yield
+
+
+@pytest.fixture(autouse=True)
+async def _no_real_stt(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
+    """실제 리턴제로 접속(키·요금·동시 접속 한도)을 막는다. 자기 가짜 세션이 필요한 테스트는 다시 덮어쓴다."""
+
+    async def silent() -> SilentSession:
+        return SilentSession()
+
+    monkeypatch.setattr(live, "open_session", silent)
+    yield
+    for meeting_id in list(live.lives):  # 음성 테스트가 남긴 자막 상태(검사 작업·세션)를 정리한다
+        await live.end(meeting_id)
+    live.ended.clear()
 
 
 @pytest.fixture(autouse=True)
