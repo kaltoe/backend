@@ -9,6 +9,7 @@ app/
   main.py         앱 생성, CORS, 라우터 연결
   config.py       환경 변수 (.env)
   api/            HTTP API
+  db/             DB 모델(ERD 명세서 기준), 세션, 마이그레이션(migrations/)
   realtime/       회의룸 WebSocket — 같은 회의 참여자에게 이벤트 전달
   stt/            STT 엔진 연동 — 결과는 Utterance 로 통일
     rtzr.py       리턴제로 스트리밍: 회의 중 실시간 자막·사담 판단 입력
@@ -31,6 +32,21 @@ uv run uvicorn app.main:app --reload
 - API 문서: http://localhost:8000/docs
 - 상태 확인: http://localhost:8000/health
 
+## DB
+
+PostgreSQL 17 을 씁니다. 로컬에서는 Docker 로 띄우고 마이그레이션을 적용합니다.
+
+```bash
+docker run -d --name kaltoe-db -p 127.0.0.1:5432:5432 \
+  -e POSTGRES_USER=kaltoe -e POSTGRES_PASSWORD=kaltoe -e POSTGRES_DB=kaltoe postgres:17
+uv run alembic upgrade head
+```
+
+- 5432 포트를 이미 쓰고 있으면 `-p 127.0.0.1:5433:5432` 처럼 바꾸고 `.env` 의 `DATABASE_URL` 포트도 맞춥니다.
+- 모델(`app/db/models.py`)을 바꾸면 `uv run alembic revision --autogenerate -m "설명"` 으로 마이그레이션을 만들고, 생성된 파일을 확인한 뒤 함께 커밋합니다.
+- 테이블 기준은 노션 ERD 명세서의 테이블 표입니다.
+- DB 테스트는 테스트마다 롤백합니다. 로컬에 DB가 없으면 DB 테스트만 건너뛰고, CI 에서는 Postgres 서비스로 항상 실행합니다.
+
 ## Docker
 
 ```bash
@@ -38,7 +54,8 @@ docker build -t kaltoe-backend .
 docker run --rm -p 8000:8000 --env-file .env kaltoe-backend
 ```
 
-- 이미지에는 `app/` 과 의존성만 들어가고, `.env` 는 실행할 때 `--env-file` 로 넘깁니다.
+- 이미지에는 `app/`, `alembic.ini` 와 의존성만 들어가고, `.env` 는 실행할 때 `--env-file` 로 넘깁니다.
+- 마이그레이션은 컨테이너 안에서 `alembic upgrade head` 로 적용합니다.
 - 회의룸 연결을 메모리에서 관리하므로 **컨테이너 1개, 워커 1개**로만 띄웁니다. 여러 개로 늘리면 같은 회의 참가자끼리 이벤트가 전달되지 않습니다.
 - HTTPS(`wss`)는 앞단 프록시(Caddy 등)가 맡습니다. 브라우저 마이크는 HTTPS 에서만 동작합니다.
 - 서버에서는 `-p 127.0.0.1:8000:8000` 으로 띄워 8000 포트를 외부에 열지 않습니다. 앱이 프록시 헤더를 믿도록 설정돼 있어서, 프록시를 거치지 않는 접근을 막아야 합니다.
