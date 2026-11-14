@@ -3,12 +3,14 @@
 WebSocket 은 놓친 이벤트를 다시 보내지 않으므로 화면을 맞추는 기준은 이 응답 하나다.
 """
 
+from datetime import timedelta
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai import offtopic
 from app.api import docs
 from app.api.auth import CurrentCaller
 from app.api.errors import ApiError, ErrorCode
@@ -18,6 +20,7 @@ from app.db.models import (
     AgendaStatus,
     MeetingMode,
     MeetingStatus,
+    OfftopicEvent,
     Participant,
     Role,
     Utterance,
@@ -155,6 +158,34 @@ async def get_state(
     def mic(participant_id: int) -> MicState:
         return manager.mic_state(meeting_id, participant_id)
 
+    # 떠 있는 사담 경고: 닫히지 않았고 autoCloseSeconds(5초)가 안 지난 마지막 경고
+    now = utcnow()
+    active = (
+        await session.execute(
+            select(OfftopicEvent, Agenda.title)
+            .join(Agenda, Agenda.id == OfftopicEvent.agenda_id)
+            .where(
+                OfftopicEvent.meeting_id == meeting_id,
+                OfftopicEvent.dismissed_at.is_(None),
+                OfftopicEvent.detected_at > now - timedelta(seconds=offtopic.AUTO_CLOSE_SECONDS),
+            )
+            .order_by(OfftopicEvent.detected_at.desc())
+            .limit(1)
+        )
+    ).first()
+    active_event = (
+        ActiveOfftopicEvent(
+            event_id=active[0].id,
+            agenda_id=active[0].agenda_id,
+            agenda_title=active[1],
+            score=active[0].score,
+            detected_at=active[0].detected_at,
+            auto_close_seconds=offtopic.AUTO_CLOSE_SECONDS,
+        )
+        if active is not None
+        else None
+    )
+
     live_status = live.status(meeting_id)
     if live_status is None:  # 아직 소리가 오지 않았다(비대면은 #22)
         stt_status: SttStatus = "OK"
@@ -202,8 +233,7 @@ async def get_state(
             transcripts=transcripts,
             stt_status=stt_status,
             recording=recording,
-            # ponytail: 고정 기본값. #23(offtopic*)이 메모리 상태를 만들면 거기서 읽는다
-            offtopic_status="OK",
-            active_offtopic_event=None,
+            offtopic_status=offtopic.state(meeting_id),
+            active_offtopic_event=active_event,
         )
     )

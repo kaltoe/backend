@@ -15,6 +15,7 @@ dependencies = [
   "alembic>=1.14",
   "pyjwt>=2.10",
   "bcrypt>=4.2",
+  "openai>=3.51.0",
 ]
 
 [dependency-groups]
