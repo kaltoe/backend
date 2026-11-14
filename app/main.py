@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.ai import summary
 from app.api import docs, health
 from app.api.errors import install_error_handlers
 from app.api.router import api_router
@@ -20,6 +21,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     tasks = [
         asyncio.create_task(sweep_loop()),  # 회의 자동 종료 검사
         asyncio.create_task(merge.cleanup_loop()),  # 녹음 파일 정리(1시간마다)
+        asyncio.create_task(summary.sweep_loop()),  # 안건별 3줄 요약
     ]
     yield
     for task in tasks:

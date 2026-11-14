@@ -20,6 +20,7 @@ from httpx_ws.transport import ASGIWebSocketTransport
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from app.ai import summary
 from app.api.rate_limit import entry_limiter
 from app.config import get_settings
 from app.db.session import SessionFactory, get_db, get_session_factory
@@ -147,6 +148,7 @@ async def _no_real_stt(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
 def _no_background_merge(monkeypatch: pytest.MonkeyPatch) -> None:
     """회의 종료 테스트가 합본(ffmpeg·S3)을 백그라운드로 띄우지 않게 한다. 합본 테스트는 run() 을 직접 부른다."""
     monkeypatch.setattr(merge, "start", lambda meeting_id: None)
+    monkeypatch.setattr(summary, "refresh_later", lambda meeting_id: None)  # CLOVA 콜백 뒤 요약 다시 만들기(#27)
 
 
 @pytest.fixture(autouse=True)
