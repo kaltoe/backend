@@ -58,7 +58,7 @@ Swagger에서는 호출할 수 없어 요약만 적습니다. 자세한 내용�
 - 끊겼다가 다시 붙으면 API-04로 놓친 내용을 채웁니다.
 
 **WS-02 음성 송출** `wss://…/ws/meetings/{{meetingId}}/audio?token={{accessToken}}`
-- 연결 직후 텍스트 프레임 한 번:
+- 연결 직후(10초 안에) 텍스트 프레임 한 번:
   `{{ "type": "audio.start", "sampleRate": 16000, "encoding": "LINEAR16", "channels": 1, "startOffsetMs": null }}`.
   재연결이면 `startOffsetMs`에 로컬 버퍼 첫 청크의 녹음 위치(최대 10분 전)를 넣습니다.
 - 그 뒤 바이너리 PCM 청크(약 100~250ms)를 보냅니다. 서버는 이 채널로 아무것도 보내지 않습니다(이벤트는 WS-01).
@@ -68,7 +68,7 @@ Swagger에서는 호출할 수 없어 요약만 적습니다. 자세한 내용�
 - `4404` 회의 없음
 - `4409` (WS-02) 같은 참가자가 다른 기기에서 음성 연결해 이전 연결을 닫음
 - `4410` 회의 종료. 재연결하지 않습니다
-- `1008` (WS-02) `audio.start` 형식이 틀렸거나 `startOffsetMs`가 버퍼 범위 밖
+- `1008` (WS-02) `audio.start`를 연결 후 10초 안에 보내지 않았거나, 형식이 틀렸거나, `startOffsetMs`가 버퍼 범위 밖
 - `1001` (WS-01) 60초 동안 메시지가 없음. 다시 연결해도 됩니다
 
 </details>
