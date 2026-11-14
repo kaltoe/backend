@@ -12,6 +12,7 @@ from httpx_ws import AsyncWebSocketSession, WebSocketDisconnect, aconnect_ws
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Meeting
+from app.db.session import get_session_factory
 from app.log_filters import DropQueryString, strip_query
 from app.meetings.timer import utcnow
 from app.realtime import manager as manager_module
@@ -303,3 +304,49 @@ def test_log_filters_installed_on_uvicorn_loggers() -> None:
     create_app()
     for name in ("uvicorn.access", "uvicorn.error"):
         assert sum(isinstance(f, DropQueryString) for f in logging.getLogger(name).filters) == 1
+
+
+class IdleSocket:
+    """받기만 기다리고 아무것도 오지 않는 WebSocket. 핸들러를 직접 돌릴 때 쓴다."""
+
+    def __init__(self) -> None:
+        self.sent: list[dict[str, Any]] = []
+
+    async def accept(self) -> None:
+        return None
+
+    async def close(self, code: int = 1000) -> None:
+        return None
+
+    async def send_json(self, message: dict[str, Any]) -> None:
+        self.sent.append(message)
+
+    async def receive(self) -> dict[str, Any]:
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+async def test_cancel_during_joined_broadcast_still_cleans_up(
+    app: FastAPI, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 막힌 전송 때문에 받기 루프가 participant.joined 를 보내는 도중 취소돼도, 연결이 목록에 남지 않아야 한다
+    created = (await client.post("/api/v1/meetings", json=CREATE)).json()["data"]
+    code = created["meetingId"]
+    original = manager.broadcast
+
+    async def cancel_on_joined(meeting_id: str, type_: str, data: Any = None) -> None:
+        if type_ == "participant.joined":
+            current = asyncio.current_task()
+            assert current is not None
+            current.cancel()
+        await original(meeting_id, type_, data)
+
+    monkeypatch.setattr(manager, "broadcast", cancel_on_joined)
+    sessions = app.dependency_overrides[get_session_factory]()
+    task = asyncio.create_task(
+        ws_module.status_channel(cast(Any, IdleSocket()), code, sessions=sessions, token=created["accessToken"])
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not manager.is_connected(code, created["host"]["participantId"])
+    assert manager.count(code) == 0

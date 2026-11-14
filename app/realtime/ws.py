@@ -125,19 +125,19 @@ async def status_channel(
 
     connection = Connection(websocket=websocket, member=result, reader=asyncio.current_task())
     first = manager.add(meeting_id, connection, room_task=lambda: timer_sync_loop(sessions, meeting_id))
-    if first:
-        await manager.broadcast(
-            meeting_id,
-            "participant.joined",
-            ParticipantJoined(
-                participant_id=result.participant_id,
-                name=result.name,
-                role=Role(result.role),
-                connected_count=manager.count(meeting_id),
-            ),
-        )
-
+    # 목록에 넣은 뒤의 모든 await 는 try 안에 둔다. 막힌 전송으로 이 태스크가 취소돼도 finally 가 목록에서 뺀다
     try:
+        if first:
+            await manager.broadcast(
+                meeting_id,
+                "participant.joined",
+                ParticipantJoined(
+                    participant_id=result.participant_id,
+                    name=result.name,
+                    role=Role(result.role),
+                    connected_count=manager.count(meeting_id),
+                ),
+            )
         while True:
             try:
                 raw = await asyncio.wait_for(receive_text(websocket), timeout=HEARTBEAT_TIMEOUT_SECONDS)
