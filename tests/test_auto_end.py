@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from typing import Any
 
 import httpx
 import pytest
@@ -89,6 +90,25 @@ async def test_ends_60_minutes_past_target_even_if_paused(
     assert await auto_end.sweep(sessions, deadline) == [code]
     meeting = await reload(session, code)
     assert (meeting.status, meeting.ended_by, meeting.paused_at) == ("ENDED", "AUTO", None)
+
+
+async def test_one_failure_does_not_block_others(
+    client: httpx.AsyncClient, session: AsyncSession, sessions: SessionFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broken, fine = (await create(client))["meetingId"], (await create(client))["meetingId"]
+    real_finish = auto_end.finish
+
+    async def finish(s: AsyncSession, meeting: Meeting, *args: Any) -> Any:
+        if meeting.id == broken:
+            raise RuntimeError("DB 오류")
+        return await real_finish(s, meeting, *args)
+
+    monkeypatch.setattr(auto_end, "finish", finish)
+    assert await auto_end.sweep(sessions, NOW) == []
+    # 회의 하나가 실패해도 나머지는 끝내고, 실패한 회의는 다음 회차에 다시 본다
+    assert await auto_end.sweep(sessions, NOW + seconds(601)) == [fine]
+    assert (await reload(session, broken)).status == "IN_PROGRESS"
+    assert (await reload(session, fine)).status == "ENDED"
 
 
 async def test_meeting_ended_event_says_auto(app: FastAPI, session: AsyncSession, sessions: SessionFactory) -> None:

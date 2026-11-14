@@ -51,12 +51,17 @@ async def sweep(sessions: SessionFactory, now: datetime) -> list[str]:
 
     ended: list[str] = []
     for meeting_id in candidates:
-        async with sessions() as session:
-            meeting = await timer.lock_meeting(session, meeting_id)
-            if meeting.status == MeetingStatus.ENDED:  # 그 사이 진행자가 끝냈다
-                continue
-            event = await finish(session, meeting, EndedBy.AUTO, now)
-            await session.commit()
+        try:
+            async with sessions() as session:
+                meeting = await timer.lock_meeting(session, meeting_id)
+                if meeting.status == MeetingStatus.ENDED:  # 그 사이 진행자가 끝냈다
+                    continue
+                event = await finish(session, meeting, EndedBy.AUTO, now)
+                await session.commit()
+        except Exception:
+            # 회의 하나가 실패해도 나머지는 끝낸다. 실패한 회의는 다음 회차(30초 뒤)에 다시 본다
+            logger.exception("회의 자동 종료 실패: %s", meeting_id)
+            continue
         empty_since.pop(meeting_id, None)
         await announce(meeting_id, event)
         ended.append(meeting_id)
