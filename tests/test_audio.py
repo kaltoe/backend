@@ -89,6 +89,12 @@ async def test_close_codes(app: FastAPI) -> None:
             assert await close_code(ws) == 4410
 
 
+async def test_no_audio_start_is_closed(app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(audio, "START_TIMEOUT_SECONDS", 0.2)
+    async with room(app) as r, connect(r, r.host_token) as ws:
+        assert await close_code(ws) == 1008  # 연결만 하고 audio.start 를 보내지 않음
+
+
 async def test_buffer_older_than_10_minutes_is_refused(
     app: FastAPI, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

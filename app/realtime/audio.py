@@ -14,6 +14,7 @@
 import asyncio
 import contextlib
 import json
+import os
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,6 +38,7 @@ BYTES_PER_MS = 32  # 16000Hz × 2바이트 × 1채널
 WAV_HEADER = 44
 BUFFER_LIMIT_MS = 10 * 60 * 1000  # 클라이언트 재연결 버퍼 최대 10분
 LIVE_SLACK_MS = 1000  # 지금 위치와 이만큼 어긋나도 이어 쓴다(네트워크 지연)
+START_TIMEOUT_SECONDS = 10.0  # 연결 후 audio.start 를 기다리는 시간
 
 # 회의 코드 → 참가자 → 지금 음성 연결
 audio_sockets: dict[str, dict[int, WebSocket]] = {}
@@ -104,7 +106,10 @@ def save_spans(path: Path, spans: list[list[int]]) -> None:
             merged[-1][1] = max(merged[-1][1], end)
         else:
             merged.append([start, end])
-    path.write_text(json.dumps([{"startMs": s, "endMs": e} for s, e in merged]))
+    # 임시 파일에 다 쓴 뒤 바꿔 끼운다. 읽는 쪽(#25 합본)이 반쯤 쓴 파일을 보지 않게 한다
+    temp = path.with_name(f"{path.name}.tmp")
+    temp.write_text(json.dumps([{"startMs": s, "endMs": e} for s, e in merged]))
+    os.replace(temp, path)
 
 
 async def load(sessions: SessionFactory, meeting_id: str) -> Meeting | None:
@@ -132,8 +137,9 @@ async def audio_channel(
         await websocket.close(code=member)
         return
     try:
-        start = AudioStart.model_validate_json(await receive_text(websocket) or "")
-    except ValidationError:
+        first = await asyncio.wait_for(receive_text(websocket), START_TIMEOUT_SECONDS)
+        start = AudioStart.model_validate_json(first or "")
+    except (TimeoutError, ValidationError):  # 연결만 하고 audio.start 를 안 보내거나 형식이 틀렸다
         await websocket.close(code=CLOSE_BAD_AUDIO_START)
         return
     meeting = await load(sessions, meeting_id)
@@ -149,6 +155,8 @@ async def audio_channel(
     sockets = audio_sockets.setdefault(meeting_id, {})
     previous, sockets[pid] = sockets.get(pid), websocket
     if previous is not None:
+        # ponytail: 이전 연결이 write_pcm 중이면 잠깐 같은 WAV 에 같이 쓸 수 있다. 위치가 달라 겹치지 않고
+        # 헤더는 다음 쓰기 때 다시 맞춰진다. 문제가 되면 (회의, 참가자)별 asyncio.Lock 으로 쓰기를 차례로 한다
         with contextlib.suppress(Exception):
             await previous.close(code=CLOSE_REPLACED)
 
