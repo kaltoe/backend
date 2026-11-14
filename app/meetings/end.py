@@ -26,7 +26,7 @@ from app.db.models import (
     SummaryStatus,
 )
 from app.db.session import get_db
-from app.meetings import timer
+from app.meetings import merge, timer
 from app.realtime import audio
 from app.realtime.events import MeetingEnded
 from app.realtime.manager import manager
@@ -83,7 +83,7 @@ async def announce(meeting_id: str, ended: MeetingEnded) -> None:
     await manager.broadcast(meeting_id, "meeting.ended", ended)
     await audio.close_all(meeting_id)  # WS-02 음성 연결은 4410 으로 닫는다. 녹음 파일은 청크마다 닫혀 있다
     await live.end(meeting_id)  # 리턴제로 세션을 EOS 로 닫는다. 남은 확정 문장은 엔진이 닫을 때까지 저장한다
-    # ponytail: 종료 후 처리 지점. #25 는 합본 만들기를 백그라운드로 시작하는 호출을 여기에 붙인다
+    merge.start(meeting_id)  # 다시 듣기용 합본을 백그라운드로 만든다(#25)
 
 
 @router.post(
