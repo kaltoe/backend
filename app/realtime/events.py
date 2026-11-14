@@ -107,6 +107,16 @@ class OfftopicWarning(CamelModel):
     auto_close_seconds: int
 
 
+class DismissedBy(CamelModel):
+    participant_id: int
+    name: str
+
+
+class OfftopicDismissed(CamelModel):
+    event_id: int
+    dismissed_by: DismissedBy
+
+
 class OfftopicStatusChanged(CamelModel):
     state: Literal["OK", "ERROR"]
 
