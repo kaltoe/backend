@@ -7,22 +7,26 @@ DATABASE_URL 의 Postgres 에 마이그레이션을 적용하고, 테스트마�
 import asyncio
 import os
 from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import FastAPI
+from httpx_ws.transport import ASGIWebSocketTransport
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.api.rate_limit import entry_limiter
 from app.config import get_settings
-from app.db.session import get_db
+from app.db.session import SessionFactory, get_db, get_session_factory
 from app.main import create_app
 from app.meetings import codes
 from app.meetings.attempts import password_failures, recovery_key_failures
 from app.meetings.idempotency import create_meeting_cache
+from app.realtime.manager import manager
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -72,17 +76,34 @@ async def session(db_url: str) -> AsyncIterator[AsyncSession]:
 
 
 @pytest.fixture
-async def client(session: AsyncSession) -> AsyncIterator[httpx.AsyncClient]:
-    """실제 앱에 테스트 세션을 주입한 클라이언트. 요청의 커밋도 테스트가 끝나면 롤백된다."""
-    app = create_app()
+def app(session: AsyncSession) -> FastAPI:
+    """실제 앱에 테스트 세션을 주입한다. 요청의 커밋도 테스트가 끝나면 롤백된다."""
+    application = create_app()
 
     async def override() -> AsyncIterator[AsyncSession]:
         yield session
 
-    app.dependency_overrides[get_db] = override
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+    @asynccontextmanager
+    async def borrowed() -> AsyncIterator[AsyncSession]:
+        yield session  # 테스트 세션은 닫지 않는다
+
+    def factory() -> SessionFactory:
+        return borrowed
+
+    application.dependency_overrides[get_db] = override
+    application.dependency_overrides[get_session_factory] = factory
+    return application
+
+
+@pytest.fixture
+async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
         yield c
+
+
+def ws_client(app: FastAPI) -> httpx.AsyncClient:
+    """WebSocket 테스트용 클라이언트. 태스크 그룹을 열므로 픽스처가 아니라 테스트 안에서 async with 로 쓴다."""
+    return httpx.AsyncClient(transport=ASGIWebSocketTransport(app=app), base_url="http://test")
 
 
 @pytest.fixture(autouse=True)
@@ -103,3 +124,10 @@ def _reset_memory_state() -> Iterator[None]:
     reset()
     yield
     reset()
+
+
+@pytest.fixture(autouse=True)
+async def _reset_rooms() -> AsyncIterator[None]:
+    await manager.reset()
+    yield
+    await manager.reset()
