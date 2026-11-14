@@ -11,7 +11,7 @@ from typing import Any
 from pydantic_core import to_jsonable_python
 
 from app.api.errors import GENERIC_MESSAGE
-from app.api.schemas import CamelModel, to_kst_iso
+from app.api.schemas import CamelModel, KstDatetime, to_kst_iso
 from app.db.models import Role
 from app.meetings.timer import TimerSnapshot, utcnow
 
@@ -48,6 +48,16 @@ class ParticipantUpdated(CamelModel):
 
 
 class TimerSync(CamelModel):
+    timer: TimerSnapshot
+
+
+class MeetingPaused(CamelModel):
+    paused_at: KstDatetime
+    timer: TimerSnapshot
+
+
+class MeetingResumed(CamelModel):
+    resumed_at: KstDatetime
     timer: TimerSnapshot
 
 

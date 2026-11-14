@@ -97,6 +97,23 @@ def ensure_transition(current: str, target: MeetingStatus) -> None:
         raise ApiError(ErrorCode.INVALID_STATE)
 
 
+def pause(meeting: Meeting, now: datetime) -> None:
+    """IN_PROGRESS → PAUSED. 상태 확인은 ensure_transition 이 먼저 한다."""
+    meeting.status = MeetingStatus.PAUSED.value
+    meeting.paused_at = now
+
+
+def resume(meeting: Meeting, now: datetime) -> None:
+    """PAUSED → IN_PROGRESS. 멈춘 시간은 paused_total_seconds 에만 더한다(API-06, API-07 자동 재개).
+
+    초 단위로 내림해 더하므로 재개 순간 타임라인은 1초 미만 앞으로만 움직이고, 뒤로 가지 않는다.
+    """
+    if meeting.paused_at is not None:
+        meeting.paused_total_seconds += int((now - meeting.paused_at).total_seconds())
+    meeting.paused_at = None
+    meeting.status = MeetingStatus.IN_PROGRESS.value
+
+
 async def lock_meeting(session: AsyncSession, meeting_id: str) -> Meeting:
     """상태를 바꾸는 API(일시 정지·재개·안건 전환·종료)는 이 행 잠금 안에서 처리해 동시 요청을 차례로 받는다."""
     meeting = await session.scalar(select(Meeting).where(Meeting.id == meeting_id).with_for_update())
