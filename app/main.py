@@ -11,7 +11,7 @@ from app.api.router import api_router
 from app.config import get_settings
 from app.log_filters import install_log_filters
 from app.meetings.auto_end import sweep_loop
-from app.realtime import ws
+from app.realtime import audio, ws
 
 
 @contextlib.asynccontextmanager
@@ -41,6 +41,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(api_router)
     app.include_router(ws.router)
+    app.include_router(audio.router)
     return app
 
 
