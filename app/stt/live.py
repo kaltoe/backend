@@ -139,6 +139,10 @@ class Live:
         self.failed = False  # 세션을 열지 못했거나 엔진이 먼저 끊었다(다시 붙는 중)
         self.retry_at = 0.0
         self.paused = False
+        self.closed = False  # 회의가 끝났다
+        # 세션을 여는 중(lock 밖). 그동안 온 기준 기기 소리는 pending 에 모았다가 연 뒤 차례로 넣는다
+        self.opening = False
+        self.pending: list[tuple[bytes, int]] = []
         self.agenda_id: int | None = None
         now = clock()
         self.no_source_since: float | None = now
@@ -147,7 +151,7 @@ class Live:
         self.lock = asyncio.Lock()
         self.ticker = asyncio.create_task(self.tick_loop())
 
-    # 바깥에서 부르는 것. 모두 lock 안에서 돈다
+    # 바깥에서 부르는 것. 모두 lock 안에서 돈다(세션 열기만 lock 밖)
 
     async def feed(self, participant_id: int, is_host: bool, pcm: bytes, at: int) -> None:
         """실시간으로 온 청크. at 은 녹음 위치(바이트)."""
@@ -159,8 +163,41 @@ class Live:
             device = self.devices.setdefault(participant_id, Device(is_host))
             device.hear(now, rms(pcm))
             await self.choose(now)
-            if participant_id == self.source:
-                await self.send(pcm, at, now)
+            if participant_id != self.source:
+                return
+            if self.run is not None:
+                await self.send(pcm, at)
+                return
+            if self.opening:
+                self.pending.append((pcm, at))
+                return
+            if now < self.retry_at:
+                return
+            self.opening, self.pending = True, [(pcm, at)]
+        await self.open()
+
+    async def open(self) -> None:
+        """리턴제로 세션을 연다. 토큰 발급 + 연결을 기다리는 동안 lock 을 잡지 않아 다른 기기 청크는 계속 처리한다."""
+        try:
+            session: SttSession | None = await open_session()
+        except Exception:
+            logger.exception("리턴제로 세션을 열지 못했습니다: %s", self.meeting_id)
+            session = None
+        async with self.lock:
+            pending, self.opening, self.pending = self.pending, False, []
+            if session is None:
+                self.failed, self.retry_at = True, clock() + RETRY_SECONDS
+                return
+            if self.closed or self.paused or self.source is None:  # 여는 사이 종료·일시 정지·보낼 기기 없음
+                with contextlib.suppress(Exception):
+                    await session.close()
+                return
+            self.runs += 1
+            self.run = Run(self.runs, session)
+            self.failed, self.last_result = False, clock()
+            spawn(self.read(self.run))
+            for chunk, chunk_at in pending:
+                await self.send(chunk, chunk_at)
 
     async def leave(self, participant_id: int) -> None:
         async with self.lock:
@@ -176,6 +213,7 @@ class Live:
 
     async def end(self) -> None:
         async with self.lock:
+            self.closed = True
             self.ticker.cancel()
             await self.stop_run()
 
@@ -233,6 +271,7 @@ class Live:
             with contextlib.suppress(Exception):
                 await self.run.session.finalize()  # 진행 중 문장을 끊지 않고 확정한 뒤 다음 기기를 이어 넣는다
             self.run.next_at = None
+        self.pending.clear()  # 세션을 여는 중에 기기가 바뀌면 이전 기기 소리는 넣지 않는다(확정 없이 섞이지 않게)
         self.source = new
         self.no_source_since = None if new is not None else now
         await self.set_recording("RECORDING" if new is not None else "INTERRUPTED")
@@ -245,21 +284,11 @@ class Live:
             RecordingStatusChanged(status=status, source_participant_id=self.source),
         )
 
-    async def send(self, pcm: bytes, at: int, now: float) -> None:
-        if self.run is None:
-            if now < self.retry_at:
-                return
-            try:
-                session = await open_session()
-            except Exception:
-                logger.exception("리턴제로 세션을 열지 못했습니다: %s", self.meeting_id)
-                self.failed, self.retry_at = True, now + RETRY_SECONDS
-                return
-            self.runs += 1
-            self.run = Run(self.runs, session)
-            self.failed, self.last_result = False, now
-            spawn(self.read(self.run))
+    async def send(self, pcm: bytes, at: int) -> None:
+        """열린 세션에 넣는다. lock 안에서 부른다."""
         run = self.run
+        if run is None:
+            return
         if run.next_at != at:
             run.anchors.append((run.sent // BYTES_PER_MS, at // BYTES_PER_MS))
         try:
@@ -283,7 +312,10 @@ class Live:
         try:
             async for message in run.session.results():
                 self.last_result = clock()
-                await self.deliver(run, message)
+                try:
+                    await self.deliver(run, message)
+                except Exception:  # 결과 하나(예: 저장 중 DB 오류)가 실패해도 다음 결과는 계속 받는다
+                    logger.exception("리턴제로 결과를 처리하지 못했습니다: %s", self.meeting_id)
         except Exception:
             logger.warning("리턴제로 결과를 받지 못했습니다: %s", self.meeting_id, exc_info=True)
         finally:
@@ -339,11 +371,16 @@ class Live:
 
 # 회의 코드 → 실시간 자막 상태
 lives: dict[str, Live] = {}
+# 끝난 회의 코드. 종료 직후 늦게 들어온 청크가 새 Live(검사 작업·리턴제로 세션)를 만들지 않게 한다.
+# ponytail: 서버가 떠 있는 동안 회의 수만큼 쌓인다(코드 하나에 수십 바이트). 커지면 종료 후 일정 시간 뒤 지운다
+ended: set[str] = set()
 
 
 async def feed(
     sessions: SessionFactory, meeting_id: str, participant_id: int, is_host: bool, pcm: bytes, at: int
 ) -> None:
+    if meeting_id in ended:
+        return
     live = lives.get(meeting_id)
     if live is None:
         live = lives[meeting_id] = Live(meeting_id, sessions)
@@ -361,6 +398,7 @@ async def pause(meeting_id: str) -> None:
 
 
 async def end(meeting_id: str) -> None:
+    ended.add(meeting_id)
     if (live := lives.pop(meeting_id, None)) is not None:
         await live.end()
 

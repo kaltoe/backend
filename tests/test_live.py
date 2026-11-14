@@ -89,6 +89,7 @@ async def _forget_lives() -> AsyncIterator[None]:
     for each in live.lives.values():
         each.ticker.cancel()
     live.lives.clear()
+    live.ended.clear()
 
 
 @pytest.fixture
@@ -257,6 +258,67 @@ async def test_stt_status(
         await live.feed(sessions, code, HOST, True, QUIET, t * 1000 * MS)
     await live.lives[code].tick()
     assert of(events, "stt.status")[-1].state == "NO_AUDIO"
+
+
+async def test_chunk_after_end_opens_nothing(clock: Clock, opened: list[FakeSession], sessions: SessionFactory) -> None:
+    code = "TESTDD"
+    await live.feed(sessions, code, HOST, True, LOUD, 0)
+    await live.end(code)
+    # 청크 처리 중 회의 상태를 읽은 뒤 종료가 커밋되면 end() 다음에 feed() 가 들어올 수 있다
+    await live.feed(sessions, code, HOST, True, LOUD, 250 * MS)
+    assert code not in live.lives
+    assert len(opened) == 1
+
+
+async def test_opening_session_does_not_block_other_devices(
+    monkeypatch: pytest.MonkeyPatch, clock: Clock, sessions: SessionFactory
+) -> None:
+    gate = asyncio.Event()
+    opened: list[FakeSession] = []
+
+    async def slow_open() -> FakeSession:
+        await gate.wait()  # 토큰 발급 + 연결이 오래 걸린다
+        opened.append(FakeSession())
+        return opened[-1]
+
+    monkeypatch.setattr(live, "open_session", slow_open)
+    code = "TESTFF"
+    first = asyncio.create_task(live.feed(sessions, code, HOST, True, LOUD, 0))
+    await until(lambda: code in live.lives and live.lives[code].opening)
+
+    # 여는 동안 다른 기기 청크는 기다리지 않고, 기준 기기 소리는 모아 둔다
+    await asyncio.wait_for(live.feed(sessions, code, A, False, LOUDER, 0), 0.5)
+    await asyncio.wait_for(live.feed(sessions, code, HOST, True, LOUD, 250 * MS), 0.5)
+    gate.set()
+    await first
+    assert opened[0].sent == [len(LOUD), len(LOUD)]  # 연 뒤 순서대로 넣는다
+    assert live.lives[code].run is not None and live.lives[code].run.anchors == [(0, 0)]
+
+    # 여는 사이 일시 정지하면 연 세션은 바로 닫고 붙이지 않는다
+    gate.clear()
+    await live.pause(code)
+    reopening = asyncio.create_task(live.feed(sessions, code, HOST, True, LOUD, 500 * MS))
+    await until(lambda: live.lives[code].opening)
+    await live.pause(code)
+    gate.set()
+    await reopening
+    assert opened[1].sent == ["EOS"]
+    assert live.lives[code].run is None
+
+
+async def test_bad_result_does_not_stop_reading(
+    clock: Clock, opened: list[FakeSession], events: list[tuple[str, Any]], sessions: SessionFactory
+) -> None:
+    code = "TESTEE"
+    await live.feed(sessions, code, HOST, True, LOUD, 0)
+    engine = opened[0]
+    engine.queue.put_nowait({"final": False, "alternatives": [{"text": "깨진 결과"}]})  # seq·start_at 없음
+    engine.queue.put_nowait(
+        {"seq": 1, "start_at": 0, "duration": 0, "final": False, "alternatives": [{"text": "다음"}]}
+    )
+    await until(lambda: bool(of(events, "transcript.partial")))
+    assert [p.text for p in of(events, "transcript.partial")] == ["다음"]
+    assert live.lives[code].run is not None  # 세션도 그대로
 
 
 async def test_open_failure_is_delayed_and_retried(
