@@ -1,4 +1,3 @@
-from collections.abc import Iterator
 from datetime import timedelta
 from typing import Any
 
@@ -11,13 +10,6 @@ from app.api.schemas import to_kst_iso
 from app.db.models import Meeting
 from app.meetings.timer import utcnow
 from app.realtime.manager import manager
-
-
-@pytest.fixture(autouse=True)
-def _reset_limiter() -> Iterator[None]:
-    entry_limiter.reset()
-    yield
-    entry_limiter.reset()
 
 
 async def add_meeting(session: AsyncSession, **overrides: Any) -> Meeting:
