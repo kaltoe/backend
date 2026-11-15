@@ -28,7 +28,7 @@ from app.meetings import codes, merge
 from app.meetings.attempts import password_failures, recovery_key_failures
 from app.meetings.idempotency import create_meeting_cache
 from app.realtime.manager import manager
-from app.stt import live
+from app.stt import clova, live
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -147,6 +147,16 @@ async def _no_real_stt(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
 def _no_background_merge(monkeypatch: pytest.MonkeyPatch) -> None:
     """회의 종료 테스트가 합본(ffmpeg·S3)을 백그라운드로 띄우지 않게 한다. 합본 테스트는 run() 을 직접 부른다."""
     monkeypatch.setattr(merge, "start", lambda meeting_id: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_clova(monkeypatch: pytest.MonkeyPatch) -> None:
+    """테스트가 실제 CLOVA 에 녹음을 올리지 않게 한다. 후처리 테스트는 다시 덮어쓴다."""
+
+    async def refuse(*args: Any) -> None:
+        raise AssertionError("테스트에서 실제 CLOVA 를 부르려고 했습니다")
+
+    monkeypatch.setattr(clova, "request", refuse)
 
 
 @pytest.fixture(autouse=True)
