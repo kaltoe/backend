@@ -304,6 +304,8 @@ ENDED = {
     "actualDurationSeconds": 1600,
 }
 
+DISMISSED = {"eventId": 55, "dismissedAt": "2026-11-03T14:06:24+09:00"}
+
 RECORDING = {
     "status": "READY",
     "url": "https://kaltoe-recordings.s3.ap-northeast-2.amazonaws.com/recordings/K7Q2MX/merged.m4a?X-Amz-Expires=3600&X-Amz-Signature=…",
