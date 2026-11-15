@@ -329,3 +329,48 @@ RECORDING = {
     "durationMs": 1600000,
     "mimeType": "audio/mp4",
 }
+
+RESULT_EXAMPLE = {
+    "meetingId": CODE,
+    "title": "마케팅 전략 주간 회의",
+    "participantCount": 3,
+    "startedAt": "2026-11-03T14:00:00+09:00",
+    "endedAt": "2026-11-03T14:28:00+09:00",
+    "endedBy": "HOST",
+    "time": {
+        "plannedTotalSeconds": 1800,
+        "actualDurationSeconds": 1600,
+        "pausedTotalSeconds": 80,
+        "diffSeconds": -200,
+        "outcome": "SAVED",
+    },
+    "agendas": [
+        {
+            "agendaId": 12,
+            "orderIndex": 0,
+            "title": "지난주 캠페인 성과 리뷰",
+            "allocatedSeconds": 600,
+            "actualSeconds": 710,
+            "diffSeconds": 110,
+            "outcome": "OVERTIME",
+            "offtopicCount": 2,
+            "recordingStartMs": 0,
+            "recordingEndMs": 710000,
+        },
+        {
+            "agendaId": 13,
+            "orderIndex": 1,
+            "title": "4분기 예산 검토",
+            "allocatedSeconds": 720,
+            "actualSeconds": 560,
+            "diffSeconds": -160,
+            "outcome": "SAVED",
+            "offtopicCount": 0,
+            "recordingStartMs": 710000,
+            "recordingEndMs": 1270000,
+        },
+    ],
+    "summaryStatus": "PROCESSING",
+    "recordingStatus": "PROCESSING",
+    "postprocessStatus": "PROCESSING",
+}

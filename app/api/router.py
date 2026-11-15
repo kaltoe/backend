@@ -3,7 +3,20 @@
 from fastapi import APIRouter
 
 from app.api.docs import ENTRY, INTERNAL, LIVE, RESULT, SETUP
-from app.meetings import agendas, create, dismiss, end, entry, pause, postprocess, recording, sign_in, state, summary
+from app.meetings import (
+    agendas,
+    create,
+    dismiss,
+    end,
+    entry,
+    pause,
+    postprocess,
+    recording,
+    result,
+    sign_in,
+    state,
+    summary,
+)
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(create.router, tags=[SETUP])
@@ -16,4 +29,5 @@ api_router.include_router(end.router, tags=[LIVE])
 api_router.include_router(dismiss.router, tags=[LIVE])
 api_router.include_router(summary.router, tags=[RESULT])
 api_router.include_router(recording.router, tags=[RESULT])
+api_router.include_router(result.router, tags=[RESULT])
 api_router.include_router(postprocess.router, tags=[INTERNAL])
