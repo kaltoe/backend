@@ -97,6 +97,28 @@ async def test_in_person_uses_clova_result_when_done(
     assert (await meeting(session, code)).summary_status == "DONE"
 
 
+async def test_out_of_range_utterances_follow_previous_agenda(
+    client: httpx.AsyncClient, session: AsyncSession, sessions: SessionFactory, model: Model
+) -> None:
+    """안건 구간 밖 CLOVA 발화(agenda_id NULL)는 전체 기록(API-14)과 같이 앞 발화의 안건, 맨 앞이면 첫 안건에 넣는다."""
+    created, (review, budget, _) = await ended(client)
+    code = created["meetingId"]
+    for agenda_id, text, offset in [
+        (None, "맨 앞 틈", 0),
+        (review, "리뷰 발언", 1000),
+        (None, "리뷰 말끝", 2000),
+        (budget, "예산 발언", 3000),
+    ]:
+        session.add(Utterance(meeting_id=code, agenda_id=agenda_id, source="POSTPROCESS", text=text, offset_ms=offset))
+    m = await meeting(session, code)
+    m.postprocess_status = "DONE"
+    await session.flush()
+
+    await summary.summarize(sessions, code)
+    talks = {agenda_title: conversation for _, agenda_title, _, conversation in model.calls}
+    assert talks == {"리뷰": "맨 앞 틈\n리뷰 발언\n리뷰 말끝", "예산": "예산 발언"}
+
+
 @pytest.mark.parametrize(("mode", "postprocess"), [("IN_PERSON", "FAILED"), ("REMOTE", "NONE")])
 async def test_realtime_when_clova_failed_or_remote(
     client: httpx.AsyncClient,

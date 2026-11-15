@@ -14,6 +14,7 @@ ponytail: 덮어쓰기 대기는 메모리에만 있어 그 사이 서버가 재
 import asyncio
 import json
 import logging
+from functools import lru_cache
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -56,14 +57,19 @@ SCHEMA: dict[str, Any] = {
 running: set[str] = set()
 
 
+@lru_cache
+def openai_client() -> AsyncOpenAI:
+    """요청마다 새로 만들면 HTTP 연결이 쌓이므로 프로세스에 하나만 둔다."""
+    return AsyncOpenAI(api_key=get_settings().openai_api_key, max_retries=2)
+
+
 async def ask_model(meeting_title: str, agenda_title: str, keywords: list[str], conversation: str) -> list[str]:
     """3줄 요약. 실패하면 예외."""
-    client = AsyncOpenAI(api_key=get_settings().openai_api_key, max_retries=2)
     user = (
         f"회의 제목: {meeting_title}\n안건: {agenda_title}\n키워드: {', '.join(keywords) or '없음'}\n\n"
         f"발언:\n{conversation}"
     )
-    resp = await client.responses.create(
+    resp = await openai_client().responses.create(
         model=MODEL,
         input=[{"role": "system", "content": PROMPT}, {"role": "user", "content": user}],
         text={"format": {"type": "json_schema", "name": "summary", "schema": SCHEMA, "strict": True}},
@@ -110,10 +116,15 @@ async def summarize(sessions: SessionFactory, meeting_id: str, refresh: bool = F
                 .where(Utterance.meeting_id == meeting_id, Utterance.source == source.value)
                 .order_by(Utterance.offset_ms, Utterance.id)
             )
+            # 안건 구간 밖 CLOVA 발화(agenda_id NULL)는 전체 기록(API-14)과 같이 바로 앞 발화의 안건, 맨 앞이면 첫 안건
+            last = await session.scalar(
+                select(Agenda.id).where(Agenda.meeting_id == meeting_id).order_by(Agenda.order_index).limit(1)
+            )
             talk: dict[int, list[str]] = {}
             for agenda_id, speaker, text in rows:
-                if agenda_id is not None and text.strip():
-                    talk.setdefault(agenda_id, []).append(f"[{speaker}] {text}" if speaker else text)
+                last = agenda_id if agenda_id is not None else last
+                if last is not None and text.strip():
+                    talk.setdefault(last, []).append(f"[{speaker}] {text}" if speaker else text)
             jobs = [(a.id, a.title, list(a.keywords), "\n".join(talk.get(a.id, []))) for a in agendas]
 
         async def one(agenda_title: str, keywords: list[str], conversation: str) -> list[str]:
