@@ -9,6 +9,7 @@
 - 성공하면 recording_status READY, 기기별 WAV·json 을 지운다. 만들기·업로드를 3번 해도 안 되면 FAILED
 
 정리: 1시간마다 종료 후 24시간이 지난 회의의 남은 파일을 지우고, 디스크 남은 공간이 2GB 아래면 경고한다.
+같은 작업에서 CLOVA 결과가 30분 넘게 오지 않은 회의를 후처리 실패로 둔다(#26).
 """
 
 import asyncio
@@ -24,9 +25,9 @@ import numpy as np
 from sqlalchemy import select
 
 from app.config import get_settings
-from app.db.models import Meeting, MeetingMode, MeetingStatus, RecordingStatus
+from app.db.models import Meeting, MeetingMode, MeetingStatus, PostprocessStatus, RecordingStatus
 from app.db.session import SessionFactory, get_session_factory
-from app.meetings import timer
+from app.meetings import postprocess, timer
 from app.stt.live import spawn
 
 logger = logging.getLogger(__name__)
@@ -152,6 +153,8 @@ async def run(sessions: SessionFactory, meeting_id: str) -> None:
                 return
             if key is None:
                 meeting.recording_status = RecordingStatus.FAILED.value
+                if not remote:  # 합본이 없으면 CLOVA 에 보낼 파일도 없다
+                    meeting.postprocess_status = PostprocessStatus.FAILED.value
             else:
                 meeting.recording_status = RecordingStatus.READY.value
                 meeting.recording_m4a_s3_key = key
@@ -159,6 +162,7 @@ async def run(sessions: SessionFactory, meeting_id: str) -> None:
             await session.commit()
         if key is not None:
             await asyncio.to_thread(remove_device_files, folder)
+            await postprocess.request(sessions, meeting_id)  # 대면이면 CLOVA 화자 분리(#26)
     finally:
         running.discard(meeting_id)
 
@@ -202,7 +206,10 @@ async def cleanup_loop() -> None:
     while True:
         await asyncio.sleep(CLEANUP_SECONDS)
         try:
-            for meeting_id in await cleanup(get_session_factory(), timer.utcnow()):
+            sessions, now = get_session_factory(), timer.utcnow()
+            for meeting_id in await cleanup(sessions, now):
                 logger.info("종료 24시간이 지난 녹음 파일을 지웠습니다: %s", meeting_id)
+            for meeting_id in await postprocess.expire(sessions, now):
+                logger.warning("CLOVA 결과가 30분 넘게 오지 않아 후처리를 실패로 둡니다: %s", meeting_id)
         except Exception:
             logger.exception("녹음 파일 정리 실패")

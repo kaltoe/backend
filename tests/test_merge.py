@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db.models import Meeting
 from app.db.session import SessionFactory
-from app.meetings import merge
+from app.meetings import merge, postprocess
 from app.realtime.audio import BYTES_PER_MS, write_pcm
 from tests.test_agendas import T0, THREE_AGENDAS, at, bearer, create, start_at_t0
 
@@ -29,6 +29,16 @@ MS = merge.SAMPLE_RATE // 1000  # 1ms 의 샘플 수
 def tone(ms: int, amplitude: int, hz: int = 440) -> np.ndarray:
     t = np.arange(ms * MS) / merge.SAMPLE_RATE
     return (amplitude * np.sin(2 * np.pi * hz * t)).astype(np.int16)
+
+
+@pytest.fixture(autouse=True)
+def _no_clova(monkeypatch: pytest.MonkeyPatch) -> None:
+    """합본 테스트는 CLOVA 요청(#26)까지 가지 않는다."""
+
+    async def skip(sessions: SessionFactory, meeting_id: str) -> None:
+        pass
+
+    monkeypatch.setattr(postprocess, "request", skip)
 
 
 @pytest.fixture
@@ -238,7 +248,11 @@ async def test_fails_after_three_attempts_and_keeps_files(
     monkeypatch.setattr(merge, "make", broken)
     await merge.run(sessions, code)
     assert len(attempts) == 3
-    assert (await reload(session, code)).recording_status == "FAILED"
+    meeting = await reload(session, code)
+    assert (meeting.recording_status, meeting.postprocess_status) == (
+        "FAILED",
+        "FAILED",
+    )  # 합본이 없으면 CLOVA 도 못 함
     assert (recordings / code / "1.wav").exists()  # 실패하면 다시 만들 수 있게 지우지 않는다
 
 

@@ -13,7 +13,7 @@ from app.api.errors import VALIDATION_MESSAGE, ErrorCode, error_body
 
 NOTION_API = "https://app.notion.com/p/API-4113a42323cb8059ae56d1b3d7379245"
 
-SETUP, ENTRY, LIVE, RESULT, HEALTH = "회의 셋업", "초대·입장", "라이브", "회의 결과", "상태 확인"
+SETUP, ENTRY, LIVE, RESULT, HEALTH, INTERNAL = "회의 셋업", "초대·입장", "라이브", "회의 결과", "상태 확인", "내부"
 
 TAGS = [
     {"name": SETUP, "description": "회의 생성(= 시작)과 안건. 토큰 없이 호출합니다."},
@@ -28,6 +28,7 @@ TAGS = [
     },
     {"name": RESULT, "description": "회의가 끝난 뒤 결과 화면(요약 등). 참가자 토큰이 필요합니다."},
     {"name": HEALTH, "description": "서버 상태 확인(배포·모니터링용)."},
+    {"name": INTERNAL, "description": "외부 서비스가 부르는 API. 프론트는 쓰지 않습니다."},
 ]
 
 DESCRIPTION = f"""
@@ -305,6 +306,21 @@ ENDED = {
 }
 
 DISMISSED = {"eventId": 55, "dismissedAt": "2026-11-03T14:06:24+09:00"}
+
+SUMMARY = {
+    "status": "DONE",
+    "agendas": [
+        {
+            "agendaId": 12,
+            "lines": [
+                "인스타그램 B안 소재가 CTR 2.4%로 목표를 넘겼어요.",
+                "전환율은 1.1%로 전주보다 0.3%p 올랐어요.",
+                "B안 중심으로 소재 예산을 늘리기로 했어요.",
+            ],
+        },
+        {"agendaId": 13, "lines": []},
+    ],
+}
 
 RECORDING = {
     "status": "READY",
