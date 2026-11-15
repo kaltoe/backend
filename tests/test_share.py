@@ -23,28 +23,31 @@ async def share(client: httpx.AsyncClient, created: dict[str, Any]) -> httpx.Res
     return await client.post(f"/api/v1/meetings/{created['meetingId']}/share", headers=bearer(created["accessToken"]))
 
 
-async def test_reuses_valid_link_and_renews_after_expiry(
+async def test_link_expires_seven_days_after_end(
     client: httpx.AsyncClient, session: AsyncSession, monkeypatch: Any
 ) -> None:
     created = await create(client)
     await start_at_t0(session, created["meetingId"])
     at(monkeypatch, 1600)
     await end(client, created)
+    ended_at = T0 + timedelta(seconds=1600)
 
+    at(monkeypatch, 1600 + 5 * 24 * 3600)  # 종료 5일 뒤에 만들어도 만료는 종료 + 7일
     first = (await share(client, created)).json()["data"]
     assert len(first["shareId"]) == 22
     assert first["shareUrl"] == f"http://localhost:3000/s/{first['shareId']}"
-    assert first["expiresAt"] == to_kst_iso(T0 + timedelta(seconds=1600) + timedelta(days=14))
+    assert first["expiresAt"] == to_kst_iso(ended_at + timedelta(days=7))
     link = await session.scalar(select(ShareLink).where(ShareLink.share_id == first["shareId"]))
     assert link is not None and link.created_by == created["host"]["participantId"]
 
-    at(monkeypatch, 1600 + 14 * 24 * 3600 - 1)  # 만료 1초 전에는 같은 링크
+    at(monkeypatch, 1600 + 7 * 24 * 3600 - 1)  # 만료 1초 전에는 같은 링크
     assert (await share(client, created)).json()["data"] == first
 
-    at(monkeypatch, 1600 + 14 * 24 * 3600)  # 만료되면 새 링크, 14일은 지금부터
-    renewed = (await share(client, created)).json()["data"]
-    assert renewed["shareId"] != first["shareId"]
-    assert renewed["expiresAt"] == to_kst_iso(T0 + timedelta(seconds=1600) + timedelta(days=28))
+    at(monkeypatch, 1600 + 7 * 24 * 3600)  # 7일이 지나면 새 링크를 만들지 않는다
+    response = await share(client, created)
+    assert error(response) == (410, "SHARE_EXPIRED")
+    assert response.json()["error"]["message"] == "공유 기간(회의 종료 후 7일)이 지났어요."
+    assert list(await session.scalars(select(ShareLink.share_id))) == [first["shareId"]]
 
 
 async def test_live_meeting_is_409_and_auth(client: httpx.AsyncClient) -> None:

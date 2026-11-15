@@ -307,5 +307,5 @@ ENDED = {
 SHARE = {
     "shareId": "q3Zx9LmPa1VbN7cK2dTg",
     "shareUrl": "https://kaltoe.app/s/q3Zx9LmPa1VbN7cK2dTg",
-    "expiresAt": "2026-11-17T14:30:00+09:00",
+    "expiresAt": "2026-11-10T14:28:00+09:00",  # 종료(endedAt) + 7일
 }
