@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
 BLOCK = SAMPLE_RATE // 10  # 100ms
+CHUNK = BLOCK * 600  # 60초씩 나눠 합친다. 기기 수 × 회의 길이만큼 메모리를 한 번에 잡지 않는다
 WAV_HEADER = 44
 ATTEMPTS = 3
 SETTLE_SECONDS = 2.0  # 종료 직후 음성 연결이 마지막 청크·json 을 쓸 시간
@@ -52,8 +53,13 @@ def device_wavs(folder: Path) -> list[Path]:
     return sorted(p for p in folder.glob("*.wav") if not p.name.startswith("merged"))
 
 
-def read_pcm(path: Path) -> np.ndarray:
-    return np.fromfile(path, dtype="<i2", offset=WAV_HEADER)
+def read_pcm(path: Path, start: int = 0, count: int = -1) -> np.ndarray:
+    """start 샘플부터 count 개(-1 이면 끝까지). 파일보다 뒤면 빈 배열."""
+    available = max(path.stat().st_size - WAV_HEADER, 0) // 2 - start
+    if available <= 0 or count == 0:
+        return np.zeros(0, dtype="<i2")
+    n = available if count < 0 else min(count, available)
+    return np.fromfile(path, dtype="<i2", count=n, offset=WAV_HEADER + start * 2)
 
 
 def build(tracks: list[np.ndarray], total: int, mix: bool) -> np.ndarray:
@@ -74,12 +80,16 @@ def build(tracks: list[np.ndarray], total: int, mix: bool) -> np.ndarray:
     return merged[:total]
 
 
-def write_wav(path: Path, pcm: np.ndarray) -> None:
+def write_merged(path: Path, wavs: list[Path], total: int, mix: bool) -> None:
+    """기기별 WAV 를 CHUNK 구간씩 읽어 build() 하고 이어 쓴다. CHUNK 가 BLOCK 의 배수라 한 번에 만든 것과 같다."""
     with wave.open(str(path), "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(SAMPLE_RATE)
-        w.writeframes(pcm.astype("<i2").tobytes())
+        for start in range(0, total, CHUNK):
+            end = min(start + CHUNK, total)
+            part = build([read_pcm(p, start, end - start) for p in wavs], end - start, mix)
+            w.writeframes(part.astype("<i2").tobytes())
 
 
 def ffmpeg(*args: str) -> None:
@@ -95,11 +105,10 @@ def upload(path: Path, key: str) -> None:
 
 def make(folder: Path, meeting_id: str, total_ms: int, remote: bool) -> str:
     """합본을 만들어 올리고 S3 키를 돌려준다. 대면은 merged.flac 을 남긴다."""
-    tracks = [read_pcm(p) for p in device_wavs(folder)]
-    pcm = build(tracks, total_ms * SAMPLE_RATE // 1000, mix=remote)
+    wavs = device_wavs(folder)
     folder.mkdir(parents=True, exist_ok=True)
     source, m4a = folder / "merged.wav", folder / "merged.m4a"
-    write_wav(source, pcm)
+    write_merged(source, wavs, total_ms * SAMPLE_RATE // 1000, mix=remote)
     try:
         ffmpeg("-i", str(source), "-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart", str(m4a))
         if not remote:
