@@ -47,7 +47,6 @@ THRESHOLD = 0.5
 STREAK = 2
 FAIL_LIMIT = 3
 AFTER_WARNING = timedelta(seconds=30)  # 경고 뒤 판정하지 않는 시간
-DISMISS_QUIET = timedelta(seconds=60)
 AUTO_CLOSE_SECONDS = 5
 
 # 둘 중 하나라도 THRESHOLD 이상이면 사담 높음
@@ -137,9 +136,10 @@ async def check(sessions: SessionFactory, meeting_id: str, now: datetime) -> Non
         if position - agenda_start < AGENDA_GRACE_MS or (judge.quiet_until is not None and now < judge.quiet_until):
             judge.highs = 0
             return
+        dismiss_quiet = timedelta(seconds=get_settings().offtopic_dismiss_quiet_seconds)
         dismissed = await session.scalar(
             select(OfftopicEvent.id)
-            .where(OfftopicEvent.agenda_id == agenda.id, OfftopicEvent.dismissed_at >= now - DISMISS_QUIET)
+            .where(OfftopicEvent.agenda_id == agenda.id, OfftopicEvent.dismissed_at >= now - dismiss_quiet)
             .limit(1)
         )
         lo = max(agenda_start, position - WINDOW_MS)  # 창이 이전 안건으로 넘어가지 않게
