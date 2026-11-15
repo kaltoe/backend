@@ -145,6 +145,33 @@ def test_remote_mixes_and_clips() -> None:
     assert not merge.build([], 10 * MS, mix=True).any()
 
 
+@pytest.mark.parametrize("mix", [False, True])
+def test_chunked_write_matches_one_shot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mix: bool) -> None:
+    """구간을 나눠 써도 한 번에 만든 것과 샘플 단위로 같다(구간 경계가 100ms 블록 경계와 맞는다)."""
+    monkeypatch.setattr(merge, "CHUNK", merge.BLOCK * 3)  # 300ms 씩
+    a = np.concatenate([tone(250, 9000), tone(500, 1000)])
+    b = np.concatenate([tone(400, 1000), tone(300, 9000)])
+    paths = []
+    for name, pcm in (("1", a), ("2", b)):
+        path = tmp_path / f"{name}.wav"
+        write_pcm(path, 0, pcm.tobytes())
+        paths.append(path)
+    total = 1000 * MS  # 마지막 구간은 짧고, 두 기기보다 길어 무음으로 채운다
+    merge.write_merged(tmp_path / "merged.wav", paths, total, mix)
+    assert np.array_equal(merge.read_pcm(tmp_path / "merged.wav"), merge.build([a, b], total, mix))
+
+
+def test_read_pcm_reads_only_the_asked_range(tmp_path: Path) -> None:
+    path = tmp_path / "1.wav"
+    pcm = tone(100, 5000)
+    write_pcm(path, 0, pcm.tobytes())
+    assert np.array_equal(merge.read_pcm(path, 10, 20), pcm[10:30])
+    assert np.array_equal(merge.read_pcm(path, len(pcm) - 5, 20), pcm[-5:])  # 끝에서 잘린다
+    assert len(merge.read_pcm(path, len(pcm), 20)) == 0  # 파일보다 뒤
+    path.write_bytes(bytes(merge.WAV_HEADER))
+    assert len(merge.read_pcm(path)) == 0  # 헤더만 있는 파일
+
+
 @needs_ffmpeg
 async def test_in_person_merge_uploads_m4a_and_keeps_flac(
     client: httpx.AsyncClient,
