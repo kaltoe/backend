@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import offtopic
-from app.db.models import OfftopicEvent, Utterance
+from app.db.models import Meeting, MeetingStatus, OfftopicEvent, Utterance
 from app.db.session import SessionFactory
 from app.meetings import timer
 from app.realtime.manager import manager
@@ -141,6 +141,35 @@ async def test_either_question_counts_and_two_in_a_row_warns(
         "현재 안건 키워드: CTR, 전환율\n"
         f"최근 대화:\n{TALK}"
     )
+
+
+async def test_no_warning_when_meeting_changed_while_model_was_answering(
+    client: httpx.AsyncClient,
+    session: AsyncSession,
+    sessions: SessionFactory,
+    model: Model,
+    events: list[Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """모델 호출이 길어지는 사이 일시 정지됐으면 이전 판정으로 경고하지 않고, 쉬는 시간도 걸지 않는다."""
+    code, agenda_id, _ = await setup(client, session)
+    await say(session, code, agenda_id, 90_000)
+    model.answers = [HIGH]
+    await offtopic.check(sessions, code, NOW)  # 높음 1
+
+    async def pause_then_answer(text: str) -> dict[str, float]:  # 답을 기다리는 사이 진행자가 일시 정지
+        meeting = await session.get(Meeting, code)
+        assert meeting is not None
+        meeting.status, meeting.paused_at = MeetingStatus.PAUSED.value, NOW
+        await session.flush()
+        return HIGH
+
+    monkeypatch.setattr(offtopic, "ask_model", pause_then_answer)
+    await offtopic.check(sessions, code, NOW)
+
+    assert of(events, "offtopic.warning") == []
+    assert list(await session.scalars(select(OfftopicEvent).where(OfftopicEvent.meeting_id == code))) == []
+    assert offtopic.judges[code].quiet_until is None
 
 
 async def test_after_warning_rests_30_seconds_and_counts_from_zero(

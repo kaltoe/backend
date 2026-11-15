@@ -20,6 +20,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from functools import lru_cache
 from typing import Literal
 
 from openai import AsyncOpenAI
@@ -77,10 +78,15 @@ def render_input(meeting_title: str, agendas: list[str], current: int, keywords:
     )
 
 
+@lru_cache
+def openai_client() -> AsyncOpenAI:
+    """판정마다 새로 만들면 HTTP 연결이 쌓이므로 프로세스에 하나만 둔다."""
+    return AsyncOpenAI(api_key=get_settings().openai_api_key, max_retries=0)
+
+
 async def ask_model(text: str) -> dict[str, float]:
     """질문별 확률. 거절한 질문은 빠진다. 호출이 실패하면 예외."""
-    client = AsyncOpenAI(api_key=get_settings().openai_api_key, max_retries=0)
-    decision = await client.decisions.create(
+    decision = await openai_client().decisions.create(
         model=MODEL,
         input=text,
         timeout=REQUEST_TIMEOUT_SECONDS,
@@ -179,9 +185,16 @@ async def check(sessions: SessionFactory, meeting_id: str, now: datetime) -> Non
     judge.highs += 1
     if judge.highs < STREAK:
         return
-    judge.highs, judge.quiet_until = 0, now + AFTER_WARNING
+    judge.highs = 0
 
     async with sessions() as session:
+        # 모델 호출(재시도 포함 수십 초) 사이에 멈추거나 끝나거나 안건이 바뀌었으면 지난 판정으로 경고하지 않는다
+        meeting = await session.get(Meeting, meeting_id)
+        current_agenda = await timer.current_agenda(session, meeting_id)
+        moved = meeting is None or meeting.status != MeetingStatus.IN_PROGRESS
+        if moved or current_agenda is None or current_agenda.id != agenda_id:
+            return
+        judge.quiet_until = now + AFTER_WARNING
         event = OfftopicEvent(
             meeting_id=meeting_id, agenda_id=agenda_id, score=score, window_text=conversation, detected_at=now
         )
