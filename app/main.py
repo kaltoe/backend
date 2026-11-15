@@ -11,6 +11,7 @@ from app.api.errors import install_error_handlers
 from app.api.router import api_router
 from app.config import get_settings
 from app.log_filters import install_log_filters
+from app.meetings import merge
 from app.meetings.auto_end import sweep_loop
 from app.realtime import audio, ws
 
@@ -19,6 +20,7 @@ from app.realtime import audio, ws
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     tasks = [
         asyncio.create_task(sweep_loop()),  # 회의 자동 종료 검사
+        asyncio.create_task(merge.cleanup_loop()),  # 녹음 파일 정리(1시간마다)
         asyncio.create_task(offtopic.sweep_loop()),  # 사담 판정
     ]
     yield

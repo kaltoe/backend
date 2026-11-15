@@ -24,7 +24,7 @@ from app.api.rate_limit import entry_limiter
 from app.config import get_settings
 from app.db.session import SessionFactory, get_db, get_session_factory
 from app.main import create_app
-from app.meetings import codes
+from app.meetings import codes, merge
 from app.meetings.attempts import password_failures, recovery_key_failures
 from app.meetings.idempotency import create_meeting_cache
 from app.realtime.manager import manager
@@ -141,6 +141,12 @@ async def _no_real_stt(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
     for meeting_id in list(live.lives):  # 음성 테스트가 남긴 자막 상태(검사 작업·세션)를 정리한다
         await live.end(meeting_id)
     live.ended.clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_background_merge(monkeypatch: pytest.MonkeyPatch) -> None:
+    """회의 종료 테스트가 합본(ffmpeg·S3)을 백그라운드로 띄우지 않게 한다. 합본 테스트는 run() 을 직접 부른다."""
+    monkeypatch.setattr(merge, "start", lambda meeting_id: None)
 
 
 @pytest.fixture(autouse=True)

@@ -32,6 +32,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy
+      # 합본 테스트(#25)가 ffmpeg 로 m4a·flac 을 만든다
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: uv run pytest
 
   docker:
