@@ -38,7 +38,7 @@ class Settings(BaseSettings):
 
     # OpenAI — 사담 판정 · 요약
     openai_api_key: str = ""
-    offtopic_interval_seconds: int = Field(default=10, ge=10, le=15)
+    offtopic_interval_seconds: int = Field(default=5, ge=5, le=15)  # 사담 판정 주기(PoC 2: 5초)
 
     # CLOVA 결과 콜백 (INT-01)
     clova_callback_secret: str = ""

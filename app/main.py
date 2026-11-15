@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.ai import offtopic
 from app.api import docs, health
 from app.api.errors import install_error_handlers
 from app.api.router import api_router
@@ -16,11 +17,16 @@ from app.realtime import audio, ws
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    task = asyncio.create_task(sweep_loop())  # 회의 자동 종료 검사
+    tasks = [
+        asyncio.create_task(sweep_loop()),  # 회의 자동 종료 검사
+        asyncio.create_task(offtopic.sweep_loop()),  # 사담 판정
+    ]
     yield
-    task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await task
+    for task in tasks:
+        task.cancel()
+    for task in tasks:
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 def create_app() -> FastAPI:
