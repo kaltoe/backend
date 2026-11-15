@@ -374,3 +374,22 @@ RESULT_EXAMPLE = {
     "recordingStatus": "PROCESSING",
     "postprocessStatus": "PROCESSING",
 }
+
+TRANSCRIPTS = {
+    "source": "POSTPROCESS",
+    "groups": [
+        {
+            "agendaId": 12,
+            "orderIndex": 0,
+            "title": "지난주 캠페인 성과 리뷰",
+            "items": [
+                {
+                    "utteranceId": 901,
+                    "speakerLabel": "화자 2",
+                    "text": "지난주 캠페인 CTR이 2.4%로 목표보다 조금 높게 나왔어요.",
+                    "offsetMs": 95000,
+                }
+            ],
+        }
+    ],
+}

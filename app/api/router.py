@@ -16,6 +16,7 @@ from app.meetings import (
     sign_in,
     state,
     summary,
+    transcripts,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -30,4 +31,5 @@ api_router.include_router(dismiss.router, tags=[LIVE])
 api_router.include_router(summary.router, tags=[RESULT])
 api_router.include_router(recording.router, tags=[RESULT])
 api_router.include_router(result.router, tags=[RESULT])
+api_router.include_router(transcripts.router, tags=[RESULT])
 api_router.include_router(postprocess.router, tags=[INTERNAL])
