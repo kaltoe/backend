@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from datetime import timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -8,15 +9,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import to_kst_iso
 from app.db.models import Meeting
+from app.meetings.recording import s3_client
 from tests.test_agendas import T0, at, bearer, create, error, start_at_t0
 
 
 @pytest.fixture(autouse=True)
-def fake_aws(monkeypatch: pytest.MonkeyPatch) -> None:
+def fake_aws(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """presigned URL 은 서버에서 서명만 하므로 가짜 자격 증명으로 실제 boto3 를 쓴다(S3 에 접속하지 않음)."""
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIATESTTESTTESTTEST")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
     monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
+    s3_client.cache_clear()  # 가짜 자격 증명으로 새로 만든다
+    yield
+    s3_client.cache_clear()
 
 
 async def ended(client: httpx.AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:

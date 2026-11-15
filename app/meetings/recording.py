@@ -7,8 +7,10 @@
 presign() 은 공유 녹음(API-18, #32)에서도 쓴다.
 """
 
+import asyncio
 from datetime import datetime, timedelta
-from typing import Annotated, Literal
+from functools import lru_cache
+from typing import Annotated, Any, Literal
 
 import boto3
 from fastapi import APIRouter, Depends
@@ -38,11 +40,20 @@ class RecordingOut(CamelModel):
     mime_type: Literal["audio/mp4"] | None
 
 
+@lru_cache
+def s3_client() -> Any:
+    """클라이언트를 만들 때마다 설정 파일을 읽고 자격 증명을 다시 받으므로 프로세스에 하나만 둔다."""
+    return boto3.client("s3", region_name=get_settings().aws_region)
+
+
 def presign(key: str, now: datetime) -> tuple[str, datetime]:
-    """S3 presigned GET 주소와 만료 시각. 서명은 서버에서 하므로 S3 에 묻지 않는다(EC2 인스턴스 역할로 서명)."""
+    """S3 presigned GET 주소와 만료 시각. 서명은 서버에서 하므로 S3 에 묻지 않는다(EC2 인스턴스 역할로 서명).
+
+    인스턴스 역할은 임시 자격 증명이라, 그 자격 증명이 먼저 끝나면 주소도 urlExpiresAt 보다 일찍 끊길 수 있다.
+    그래서 프론트는 재생 중 403 이 나도 이 API 를 다시 부른다(노션 API-13).
+    """
     settings = get_settings()
-    client = boto3.client("s3", region_name=settings.aws_region)
-    url = client.generate_presigned_url(
+    url = s3_client().generate_presigned_url(
         "get_object",
         Params={"Bucket": settings.s3_bucket, "Key": key, "ResponseContentType": MIME},
         ExpiresIn=int(URL_LIFETIME.total_seconds()),
@@ -90,4 +101,5 @@ async def get_recording(
     now = timer.utcnow()
     if expired(meeting, now):
         raise ApiError(ErrorCode.RECORDING_EXPIRED)
-    return ok(recording_of(meeting, now))
+    # 자격 증명을 처음 받거나 갱신할 때 인스턴스 메타데이터에 HTTP 로 묻는다. 이벤트 루프를 막지 않게 스레드에서 서명
+    return ok(await asyncio.to_thread(recording_of, meeting, now))
