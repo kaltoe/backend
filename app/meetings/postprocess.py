@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai import summary
 from app.config import get_settings
 from app.db.models import (
     Agenda,
@@ -183,5 +184,5 @@ async def clova_callback(request: Request, session: Annotated[AsyncSession, Depe
         )
     meeting.postprocess_status = PostprocessStatus.DONE.value
     await session.commit()
-    # ponytail: 요약(#27)을 백그라운드로 시작하는 호출을 여기에 붙인다
+    summary.refresh_later(meeting_id)  # 종료 직후 실시간 발화로 만든 요약을 화자 분리 결과로 다시 만든다(#27)
     return JSONResponse({"received": True})

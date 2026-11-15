@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai import summary
 from app.config import get_settings
 from app.db.models import Agenda, Meeting, Utterance
 from app.db.session import SessionFactory
@@ -145,9 +146,14 @@ async def test_request_rules(
     assert (await reload(session, missing)).postprocess_status == "FAILED"
 
 
-async def test_callback_saves_segments_by_agenda_once(client: httpx.AsyncClient, session: AsyncSession) -> None:
+async def test_callback_saves_segments_by_agenda_once(
+    client: httpx.AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    refreshed: list[str] = []
+    monkeypatch.setattr(summary, "refresh_later", refreshed.append)
     code = await ended(client, session)
     res = await client.post(URL, json=callback(code, SEGMENTS))
+    assert refreshed == [code]  # 저장한 뒤 요약을 화자 분리 결과로 다시 만든다(#27)
     assert (res.status_code, res.json()) == (200, {"received": True})  # 공통 응답 형식을 쓰지 않는다
 
     first, second, _ = [
@@ -172,6 +178,7 @@ async def test_callback_saves_segments_by_agenda_once(client: httpx.AsyncClient,
     # 같은 콜백이 다시 오면 저장하지 않고 200
     again = await client.post(URL, json=callback(code, SEGMENTS))
     assert (again.status_code, again.json()) == (200, {"received": True})
+    assert refreshed == [code]  # 중복 콜백은 다시 만들지 않는다
     count = len(
         list(
             await session.scalars(
