@@ -305,6 +305,8 @@ ENDED = {
     "actualDurationSeconds": 1600,
 }
 
+DISMISSED = {"eventId": 55, "dismissedAt": "2026-11-03T14:06:24+09:00"}
+
 SUMMARY = {
     "status": "DONE",
     "agendas": [

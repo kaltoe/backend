@@ -98,6 +98,29 @@ class RecordingStatusChanged(CamelModel):
     source_participant_id: int | None
 
 
+class OfftopicWarning(CamelModel):
+    event_id: int
+    agenda_id: int
+    agenda_title: str
+    score: float
+    detected_at: KstDatetime
+    auto_close_seconds: int
+
+
+class DismissedBy(CamelModel):
+    participant_id: int
+    name: str
+
+
+class OfftopicDismissed(CamelModel):
+    event_id: int
+    dismissed_by: DismissedBy
+
+
+class OfftopicStatusChanged(CamelModel):
+    state: Literal["OK", "ERROR"]
+
+
 class ErrorCode(StrEnum):
     INVALID_MESSAGE = "INVALID_MESSAGE"
     INTERNAL_ERROR = "INTERNAL_ERROR"
