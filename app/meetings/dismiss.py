@@ -36,7 +36,7 @@ class Dismissed(CamelModel):
         "사담 팝업의 [관련 있는 얘기예요]. 참가자 토큰이 필요하고 body 는 없습니다. "
         "처음 닫은 사람과 시각을 남기고 전원에게 WS-01 `offtopic.dismissed`를 보내 팝업을 닫습니다. "
         "이미 닫힌 경고면 다시 보내지 않고 같은 200을 줍니다(여러 명이 동시에 눌러도 오류 없음). "
-        "닫은 뒤 같은 안건에서는 60초 동안 경고를 다시 내지 않습니다."
+        "닫은 뒤 같은 안건에서는 60초(서버 설정 `OFFTOPIC_DISMISS_QUIET_SECONDS`) 동안 경고를 다시 내지 않습니다."
     ),
     responses=docs.success(docs.DISMISSED)
     | docs.errors(
