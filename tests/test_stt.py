@@ -4,9 +4,16 @@ from app.stt import clova, rtzr
 
 
 def test_clova_params_fix_speaker_count() -> None:
-    params = clova.build_params(speakers=3)
+    params = clova.build_params(speakers=3, callback="https://api/cb", userdata={"meetingId": "K7Q2MX"})
     assert params["diarization"] == {"enable": True, "speakerCountMin": 3, "speakerCountMax": 3}
-    assert clova.build_params(speakers=None)["diarization"] == {"enable": True}
+    # 비동기 + 콜백, 한국어, 단어 위치·전체 텍스트
+    assert (params["completion"], params["callback"], params["userdata"]) == (
+        "async",
+        "https://api/cb",
+        {"meetingId": "K7Q2MX"},
+    )
+    assert (params["language"], params["wordAlignment"], params["fullText"]) == ("ko-KR", True, True)
+    assert clova.build_params(speakers=None)["diarization"] == {"enable": True}  # attendeeCount 가 없으면 자동
 
 
 def test_clova_parse_segments() -> None:

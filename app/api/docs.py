@@ -13,7 +13,7 @@ from app.api.errors import VALIDATION_MESSAGE, ErrorCode, error_body
 
 NOTION_API = "https://app.notion.com/p/API-4113a42323cb8059ae56d1b3d7379245"
 
-SETUP, ENTRY, LIVE, RESULT, HEALTH = "회의 셋업", "초대·입장", "라이브", "회의 결과", "상태 확인"
+SETUP, ENTRY, LIVE, RESULT, HEALTH, INTERNAL = "회의 셋업", "초대·입장", "라이브", "회의 결과", "상태 확인", "내부"
 
 TAGS = [
     {"name": SETUP, "description": "회의 생성(= 시작)과 안건. 토큰 없이 호출합니다."},
@@ -28,6 +28,7 @@ TAGS = [
     },
     {"name": RESULT, "description": "회의가 끝난 뒤 결과 화면(요약 등). 참가자 토큰이 필요합니다."},
     {"name": HEALTH, "description": "서버 상태 확인(배포·모니터링용)."},
+    {"name": INTERNAL, "description": "외부 서비스가 부르는 API. 프론트는 쓰지 않습니다."},
 ]
 
 DESCRIPTION = f"""
@@ -302,6 +303,95 @@ ENDED = {
     "endedAt": "2026-11-03T14:28:00+09:00",
     "endedBy": "HOST",
     "actualDurationSeconds": 1600,
+}
+
+DISMISSED = {"eventId": 55, "dismissedAt": "2026-11-03T14:06:24+09:00"}
+
+SUMMARY = {
+    "status": "DONE",
+    "agendas": [
+        {
+            "agendaId": 12,
+            "lines": [
+                "인스타그램 B안 소재가 CTR 2.4%로 목표를 넘겼어요.",
+                "전환율은 1.1%로 전주보다 0.3%p 올랐어요.",
+                "B안 중심으로 소재 예산을 늘리기로 했어요.",
+            ],
+        },
+        {"agendaId": 13, "lines": []},
+    ],
+}
+
+RECORDING = {
+    "status": "READY",
+    "url": "https://kaltoe-recordings.s3.ap-northeast-2.amazonaws.com/recordings/K7Q2MX/merged.m4a?X-Amz-Expires=3600&X-Amz-Signature=…",
+    "urlExpiresAt": "2026-11-03T15:30:00+09:00",
+    "durationMs": 1600000,
+    "mimeType": "audio/mp4",
+}
+
+RESULT_EXAMPLE = {
+    "meetingId": CODE,
+    "title": "마케팅 전략 주간 회의",
+    "participantCount": 3,
+    "startedAt": "2026-11-03T14:00:00+09:00",
+    "endedAt": "2026-11-03T14:28:00+09:00",
+    "endedBy": "HOST",
+    "time": {
+        "plannedTotalSeconds": 1800,
+        "actualDurationSeconds": 1600,
+        "pausedTotalSeconds": 80,
+        "diffSeconds": -200,
+        "outcome": "SAVED",
+    },
+    "agendas": [
+        {
+            "agendaId": 12,
+            "orderIndex": 0,
+            "title": "지난주 캠페인 성과 리뷰",
+            "allocatedSeconds": 600,
+            "actualSeconds": 710,
+            "diffSeconds": 110,
+            "outcome": "OVERTIME",
+            "offtopicCount": 2,
+            "recordingStartMs": 0,
+            "recordingEndMs": 710000,
+        },
+        {
+            "agendaId": 13,
+            "orderIndex": 1,
+            "title": "4분기 예산 검토",
+            "allocatedSeconds": 720,
+            "actualSeconds": 560,
+            "diffSeconds": -160,
+            "outcome": "SAVED",
+            "offtopicCount": 0,
+            "recordingStartMs": 710000,
+            "recordingEndMs": 1270000,
+        },
+    ],
+    "summaryStatus": "PROCESSING",
+    "recordingStatus": "PROCESSING",
+    "postprocessStatus": "PROCESSING",
+}
+
+TRANSCRIPTS = {
+    "source": "POSTPROCESS",
+    "groups": [
+        {
+            "agendaId": 12,
+            "orderIndex": 0,
+            "title": "지난주 캠페인 성과 리뷰",
+            "items": [
+                {
+                    "utteranceId": 901,
+                    "speakerLabel": "화자 2",
+                    "text": "지난주 캠페인 CTR이 2.4%로 목표보다 조금 높게 나왔어요.",
+                    "offsetMs": 95000,
+                }
+            ],
+        }
+    ],
 }
 
 SHARE = {
