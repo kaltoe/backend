@@ -321,3 +321,11 @@ SUMMARY = {
         {"agendaId": 13, "lines": []},
     ],
 }
+
+RECORDING = {
+    "status": "READY",
+    "url": "https://kaltoe-recordings.s3.ap-northeast-2.amazonaws.com/recordings/K7Q2MX/merged.m4a?X-Amz-Expires=3600&X-Amz-Signature=…",
+    "urlExpiresAt": "2026-11-03T15:30:00+09:00",
+    "durationMs": 1600000,
+    "mimeType": "audio/mp4",
+}
