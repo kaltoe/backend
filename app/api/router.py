@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.docs import ENTRY, INTERNAL, LIVE, RESULT, SETUP
+from app.api.docs import ENTRY, INTERNAL, LIVE, RESULT, SETUP, SHARED
 from app.meetings import (
     agendas,
     create,
@@ -14,6 +14,7 @@ from app.meetings import (
     recording,
     result,
     share,
+    shares,
     sign_in,
     state,
     summary,
@@ -34,4 +35,5 @@ api_router.include_router(recording.router, tags=[RESULT])
 api_router.include_router(result.router, tags=[RESULT])
 api_router.include_router(transcripts.router, tags=[RESULT])
 api_router.include_router(share.router, tags=[RESULT])
+api_router.include_router(shares.router, tags=[SHARED])
 api_router.include_router(postprocess.router, tags=[INTERNAL])

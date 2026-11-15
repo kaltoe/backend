@@ -89,7 +89,13 @@ async def get_result(
         raise ApiError(ErrorCode.UNAUTHORIZED)
     if meeting.status != MeetingStatus.ENDED or meeting.ended_at is None or meeting.ended_by is None:
         raise ApiError(ErrorCode.INVALID_STATE)
+    return ok(await build_result(session, meeting))
 
+
+async def build_result(session: AsyncSession, meeting: Meeting) -> MeetingResult:
+    """API-10·16 공통. 끝난 회의(ended_at·ended_by 가 있는)만 넘긴다."""
+    assert meeting.ended_at is not None and meeting.ended_by is not None
+    meeting_id = meeting.id
     participant_count = await session.scalar(
         select(func.count()).select_from(Participant).where(Participant.meeting_id == meeting_id)
     )
@@ -134,24 +140,22 @@ async def get_result(
         )
 
     diff = actual - planned if actual is not None else None
-    return ok(
-        MeetingResult(
-            meeting_id=meeting.id,
-            title=meeting.title,
-            participant_count=participant_count or 0,
-            started_at=meeting.started_at,
-            ended_at=meeting.ended_at,
-            ended_by=EndedBy(meeting.ended_by),
-            time=ResultTime(
-                planned_total_seconds=planned,
-                actual_duration_seconds=actual,
-                paused_total_seconds=meeting.paused_total_seconds if known else None,
-                diff_seconds=diff,
-                outcome=judge(diff),
-            ),
-            agendas=[agenda_out(a) for a in agendas],
-            summary_status=SummaryStatus(meeting.summary_status or SummaryStatus.PROCESSING),
-            recording_status=RecordingStatus(meeting.recording_status or RecordingStatus.PROCESSING),
-            postprocess_status=PostprocessStatus(meeting.postprocess_status),
-        )
+    return MeetingResult(
+        meeting_id=meeting.id,
+        title=meeting.title,
+        participant_count=participant_count or 0,
+        started_at=meeting.started_at,
+        ended_at=meeting.ended_at,
+        ended_by=EndedBy(meeting.ended_by),
+        time=ResultTime(
+            planned_total_seconds=planned,
+            actual_duration_seconds=actual,
+            paused_total_seconds=meeting.paused_total_seconds if known else None,
+            diff_seconds=diff,
+            outcome=judge(diff),
+        ),
+        agendas=[agenda_out(a) for a in agendas],
+        summary_status=SummaryStatus(meeting.summary_status or SummaryStatus.PROCESSING),
+        recording_status=RecordingStatus(meeting.recording_status or RecordingStatus.PROCESSING),
+        postprocess_status=PostprocessStatus(meeting.postprocess_status),
     )

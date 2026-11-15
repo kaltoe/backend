@@ -14,6 +14,7 @@ from app.api.errors import VALIDATION_MESSAGE, ErrorCode, error_body
 NOTION_API = "https://app.notion.com/p/API-4113a42323cb8059ae56d1b3d7379245"
 
 SETUP, ENTRY, LIVE, RESULT, HEALTH, INTERNAL = "회의 셋업", "초대·입장", "라이브", "회의 결과", "상태 확인", "내부"
+SHARED = "공유"
 
 TAGS = [
     {"name": SETUP, "description": "회의 생성(= 시작)과 안건. 토큰 없이 호출합니다."},
@@ -27,6 +28,11 @@ TAGS = [
         "제어 API는 진행자만 호출할 수 있습니다. 결과는 WS-01로 전원에게 퍼집니다.",
     },
     {"name": RESULT, "description": "회의가 끝난 뒤 결과 화면(요약 등). 참가자 토큰이 필요합니다."},
+    {
+        "name": SHARED,
+        "description": "공유 링크로 여는 읽기 전용 화면. 토큰 없이 `shareId`로 호출합니다. "
+        "링크는 회의 종료 + 7일에 만료됩니다.",
+    },
     {"name": HEALTH, "description": "서버 상태 확인(배포·모니터링용)."},
     {"name": INTERNAL, "description": "외부 서비스가 부르는 API. 프론트는 쓰지 않습니다."},
 ]
@@ -398,4 +404,60 @@ SHARE = {
     "shareId": "q3Zx9LmPa1VbN7cK2dTg",
     "shareUrl": "https://kaltoe.app/s/q3Zx9LmPa1VbN7cK2dTg",
     "expiresAt": "2026-11-10T14:28:00+09:00",  # 종료(endedAt) + 7일
+}
+
+SHARED_MEETING = {
+    "title": "마케팅 전략 주간 회의",
+    "participantCount": 3,
+    "startedAt": "2026-11-03T14:00:00+09:00",
+    "endedAt": "2026-11-03T14:28:00+09:00",
+    "time": RESULT_EXAMPLE["time"],
+    "agendas": [
+        {
+            "agendaId": 12,
+            "orderIndex": 0,
+            "title": "지난주 캠페인 성과 리뷰",
+            "allocatedSeconds": 600,
+            "actualSeconds": 710,
+            "diffSeconds": 110,
+            "outcome": "OVERTIME",
+            "offtopicCount": 2,
+            "summaryLines": [
+                "인스타그램 B안 소재가 CTR 2.4%로 목표를 넘겼어요.",
+                "전환율은 1.1%로 전주보다 0.3%p 올랐어요.",
+                "B안 중심으로 소재 예산을 늘리기로 했어요.",
+            ],
+        },
+        {
+            "agendaId": 13,
+            "orderIndex": 1,
+            "title": "4분기 예산 검토",
+            "allocatedSeconds": 720,
+            "actualSeconds": 560,
+            "diffSeconds": -160,
+            "outcome": "SAVED",
+            "offtopicCount": 0,
+            "summaryLines": [],
+        },
+    ],
+    "summaryStatus": "DONE",
+    "expiresAt": "2026-11-10T14:28:00+09:00",
+}
+
+SHARED_TRANSCRIPTS = {
+    "source": "POSTPROCESS",
+    "groups": [
+        {
+            "agendaId": 12,
+            "orderIndex": 0,
+            "title": "지난주 캠페인 성과 리뷰",
+            "items": [
+                {
+                    "speakerLabel": "화자 2",
+                    "text": "지난주 캠페인 CTR이 2.4%로 목표보다 조금 높게 나왔어요.",
+                    "offsetMs": 95000,
+                }
+            ],
+        }
+    ],
 }
