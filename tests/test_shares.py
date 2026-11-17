@@ -129,7 +129,8 @@ async def test_shared_recording_matches_api13_and_expires_with_recording(
     await set_recording(session, code, "READY", f"recordings/{code}/merged.m4a")
     shared = (await client.get(f"/api/v1/shares/{sid}/recording")).json()["data"]
     own = await as_member(client, created, "recording")
-    assert shared == own  # 같은 시각에 같은 파일을 서명한다
+    # 같은 파일을 서명한다. 서명 시각(X-Amz-Date)은 실제 시계라 두 요청 사이에 초가 넘어가면 서명이 달라진다
+    assert {**shared, "url": shared["url"].split("?")[0]} == {**own, "url": own["url"].split("?")[0]}
     assert f"/recordings/{code}/merged.m4a" in shared["url"]
 
     # 결제로 링크를 다시 연 경우처럼 링크가 살아 있어도, 녹음 보관(종료 + 14일)이 지나면 녹음만 410
