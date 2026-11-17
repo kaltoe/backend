@@ -33,7 +33,10 @@ empty_since: dict[str, datetime] = {}
 
 def due(meeting: Meeting, now: datetime) -> bool:
     """자동 종료할 회의인지. 접속자 부재 시각(empty_since)도 여기서 갱신한다."""
-    if now >= meeting.started_at + timedelta(minutes=meeting.planned_total_minutes) + OVERTIME_LIMIT:
+    if (
+        meeting.started_at is not None
+        and now >= meeting.started_at + timedelta(minutes=meeting.planned_total_minutes) + OVERTIME_LIMIT
+    ):
         return True
     if manager.count(meeting.id) > 0:
         empty_since.pop(meeting.id, None)

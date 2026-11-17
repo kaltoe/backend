@@ -29,6 +29,7 @@ def meeting(**overrides: Any) -> Meeting:
         "planned_total_minutes": 30,
         "consent_agreed_at": NOW,
         "host_recovery_key_hash": "hash",
+        "status": "IN_PROGRESS",
         "started_at": NOW,
         "expires_at": NOW + timedelta(days=14),
     }
@@ -92,12 +93,24 @@ async def test_meeting_defaults_and_relations(session: AsyncSession) -> None:
         {"status": "ENDED", "ended_at": NOW, "ended_by": "USER"},
         {"recording_status": "EXPIRED"},
         {"summary_status": "NONE"},
+        {"status": "WAITING"},  # 대기인데 started_at 있음
+        {"started_at": None},  # 진행 중인데 started_at 없음
     ],
 )
 async def test_meeting_check_constraints(session: AsyncSession, overrides: dict[str, Any]) -> None:
     session.add(meeting(**overrides))
     with pytest.raises(IntegrityError):
         await session.flush()
+
+
+async def test_new_meeting_defaults_to_waiting(session: AsyncSession) -> None:
+    values = {k: v for k, v in meeting().__dict__.items() if k not in ("_sa_instance_state", "status", "started_at")}
+    session.add(Meeting(**values))  # 상태·시작 시각을 주지 않으면 DB 기본값
+    await session.flush()
+    m = await session.get(Meeting, "K7Q2MX")
+    assert m is not None
+    await session.refresh(m)
+    assert (m.status, m.started_at) == ("WAITING", None)
 
 
 async def test_participant_name_unique_per_meeting(session: AsyncSession) -> None:

@@ -93,8 +93,8 @@ async def get_result(
 
 
 async def build_result(session: AsyncSession, meeting: Meeting) -> MeetingResult:
-    """API-10·16 공통. 끝난 회의(ended_at·ended_by 가 있는)만 넘긴다."""
-    assert meeting.ended_at is not None and meeting.ended_by is not None
+    """API-10·16 공통. 끝난 회의(ended_at·ended_by 가 있는)만 넘긴다. 대기 중에는 끝낼 수 없어 started_at 도 있다."""
+    assert meeting.started_at is not None and meeting.ended_at is not None and meeting.ended_by is not None
     meeting_id = meeting.id
     participant_count = await session.scalar(
         select(func.count()).select_from(Participant).where(Participant.meeting_id == meeting_id)

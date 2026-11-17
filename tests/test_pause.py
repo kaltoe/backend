@@ -3,10 +3,11 @@ from datetime import timedelta
 import httpx
 import pytest
 from fastapi import FastAPI
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import to_kst_iso
-from app.db.models import Meeting
+from app.db.models import Agenda, Meeting
 from app.meetings import timer
 from tests.test_realtime import CREATE, ready, receive, room
 
@@ -84,6 +85,22 @@ async def test_wrong_state_is_409(client: httpx.AsyncClient) -> None:
     await client.post(f"/api/v1/meetings/{code}/pause", headers=bearer(token))
     res = await client.post(f"/api/v1/meetings/{code}/pause", headers=bearer(token))
     assert (res.status_code, res.json()["error"]["code"]) == (409, "INVALID_STATE")
+
+
+@pytest.mark.parametrize("action", ["pause", "resume"])
+async def test_waiting_meeting_is_409(client: httpx.AsyncClient, session: AsyncSession, action: str) -> None:
+    code, token = await create(client)
+    meeting = await session.get(Meeting, code)
+    assert meeting is not None
+    for agenda in await session.scalars(select(Agenda).where(Agenda.meeting_id == code)):
+        agenda.status, agenda.recording_start_ms = "PENDING", None
+    meeting.status, meeting.started_at = "WAITING", None  # [회의 시작] 전
+    await session.flush()
+
+    res = await client.post(f"/api/v1/meetings/{code}/{action}", headers=bearer(token))
+    assert (res.status_code, res.json()["error"]["code"]) == (409, "INVALID_STATE")
+    await session.refresh(meeting)
+    assert (meeting.status, meeting.started_at) == ("WAITING", None)  # 재개로 시작되지 않는다
 
 
 @pytest.mark.parametrize("action", ["pause", "resume"])

@@ -3,6 +3,7 @@
 - 녹음 타임라인 = 일시정지를 뺀 회의 경과 시간. 자막 offsetMs, 안건 recording_*_ms, 합본 위치가 모두 이 값이다
 - totalElapsedSeconds = now − startedAt − pausedTotalSeconds − (pausedAt 이 있으면 now − pausedAt)
 - 회의가 끝나면 now 대신 endedAt 으로 멈춘다
+- 대기(WAITING) 중에는 시작 전이라 경과가 모두 0이고, 안건은 시작하면 진행될 첫 안건을 보여 준다
 """
 
 from datetime import UTC, datetime
@@ -41,7 +42,9 @@ def judge(diff_seconds: int | None) -> Outcome:
 
 
 def timeline_ms(meeting: Meeting, now: datetime) -> int:
-    """지금의 녹음 위치(ms)."""
+    """지금의 녹음 위치(ms). 시작 전(대기)이면 0."""
+    if meeting.started_at is None:
+        return 0
     end = meeting.ended_at if meeting.ended_at is not None else now
     elapsed = end - meeting.started_at
     if meeting.paused_at is not None:
@@ -80,8 +83,9 @@ def build_snapshot(meeting: Meeting, current: Agenda | None, now: datetime) -> T
     )
 
 
-# 회의 상태: IN_PROGRESS ⇄ PAUSED → ENDED
+# 회의 상태: WAITING → IN_PROGRESS ⇄ PAUSED → ENDED. 대기 중 일시 정지·종료는 없다
 _ALLOWED = {
+    MeetingStatus.WAITING: {MeetingStatus.IN_PROGRESS},
     MeetingStatus.IN_PROGRESS: {MeetingStatus.PAUSED, MeetingStatus.ENDED},
     MeetingStatus.PAUSED: {MeetingStatus.IN_PROGRESS, MeetingStatus.ENDED},
     MeetingStatus.ENDED: set(),
@@ -127,3 +131,12 @@ async def current_agenda(session: AsyncSession, meeting_id: str) -> Agenda | Non
     return await session.scalar(
         select(Agenda).where(Agenda.meeting_id == meeting_id, Agenda.status == AgendaStatus.IN_PROGRESS.value)
     )
+
+
+async def snapshot_agenda(session: AsyncSession, meeting: Meeting) -> Agenda | None:
+    """타이머에 보여 줄 안건. 대기 중이면 시작하면 진행될 첫 안건, 아니면 진행 중 안건."""
+    if meeting.status == MeetingStatus.WAITING:
+        return await session.scalar(
+            select(Agenda).where(Agenda.meeting_id == meeting.id).order_by(Agenda.order_index).limit(1)
+        )
+    return await current_agenda(session, meeting.id)

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import docs
 from app.api.auth import CurrentHost
-from app.api.errors import ErrorCode
+from app.api.errors import ApiError, ErrorCode
 from app.api.schemas import Envelope, ok
 from app.db.models import MeetingStatus
 from app.db.session import get_db
@@ -65,6 +65,8 @@ async def resume_meeting(
     meeting_id: str, host: CurrentHost, session: Annotated[AsyncSession, Depends(get_db)]
 ) -> Envelope[MeetingResumed]:
     meeting = await timer.lock_meeting(session, meeting_id)
+    if meeting.status == MeetingStatus.WAITING:  # 시작은 API-19. 전이표로는 허용되는 방향이라 따로 막는다
+        raise ApiError(ErrorCode.INVALID_STATE)
     timer.ensure_transition(meeting.status, MeetingStatus.IN_PROGRESS)
     now = timer.utcnow()
     timer.resume(meeting, now)
