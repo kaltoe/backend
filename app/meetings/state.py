@@ -27,10 +27,11 @@ from app.db.models import (
     UtteranceSource,
 )
 from app.db.session import get_db
+from app.meetings import timer
 from app.meetings.create import invite_url
 from app.meetings.entry import find_meeting
 from app.meetings.schemas import AgendaOut, InviteOut, ParticipantOut
-from app.meetings.timer import TimerSnapshot, build_snapshot, utcnow
+from app.meetings.timer import TimerSnapshot, build_snapshot
 from app.realtime.events import MicState
 from app.realtime.manager import manager
 from app.stt import live
@@ -86,8 +87,9 @@ class MeetingState(CamelModel):
     meeting_id: str
     title: str
     meeting_mode: MeetingMode
-    status: MeetingStatus  # ENDED 여도 200. 프론트가 결과 화면으로 넘어간다
+    status: MeetingStatus  # ENDED 여도 200. 프론트가 결과 화면으로 넘어간다. WAITING 이면 대기 화면
     connected_count: int
+    attendee_count: int | None  # 셋업에서 입력한 참석 인원. 대기 화면 "3/5명 입장"의 5(분자는 connectedCount)
     invite: InviteOut
     timer: TimerSnapshot
     agendas: list[StateAgenda]
@@ -107,6 +109,9 @@ class MeetingState(CamelModel):
         "라이브 화면 마운트·새로고침·늦은 입장·WebSocket 재연결 때 화면 전체를 복원합니다. "
         "WebSocket은 놓친 이벤트를 다시 보내지 않으므로 이 응답이 기준입니다. "
         "`status`가 ENDED여도 200이고, 프론트가 결과 화면으로 보냅니다. "
+        "`WAITING`(시작 전)이면 대기 화면을 그립니다. 이때 타이머는 멈춰 있고(경과 0, 첫 안건), 안건은 모두 PENDING, "
+        "`transcripts`는 비어 있고, `recording.status`는 PAUSED입니다. 입장 현황은 `participants`·`connectedCount`·"
+        "`attendeeCount`로 그립니다. "
         "`transcripts`는 지금 안건의 확정 발화 중 최근 200개(오래된 순)입니다. "
         "비대면 회의는 `participantId`·`speakerName`에 말한 사람이 들어갑니다."
     ),
@@ -126,6 +131,8 @@ async def get_state(
         await session.scalars(select(Agenda).where(Agenda.meeting_id == meeting_id).order_by(Agenda.order_index))
     )
     current = next((a for a in agendas if a.status == AgendaStatus.IN_PROGRESS), None)
+    # 타이머에 보여 줄 안건. 대기 중이면 시작하면 진행될 첫 안건(timer.snapshot_agenda 와 같은 규칙)
+    shown = agendas[0] if meeting.status == MeetingStatus.WAITING and agendas else current
     participants = list(
         await session.scalars(select(Participant).where(Participant.meeting_id == meeting_id).order_by(Participant.id))
     )
@@ -159,7 +166,7 @@ async def get_state(
         return manager.mic_state(meeting_id, participant_id)
 
     # 떠 있는 사담 경고: 닫히지 않았고 autoCloseSeconds(5초)가 안 지난 마지막 경고
-    now = utcnow()
+    now = timer.utcnow()
     active = (
         await session.execute(
             select(OfftopicEvent, Agenda.title)
@@ -190,7 +197,9 @@ async def get_state(
     if live_status is None:  # 아직 소리가 오지 않았다(비대면은 #22)
         stt_status: SttStatus = "OK"
         recording = Recording(
-            status="PAUSED" if meeting.status == MeetingStatus.PAUSED else "RECORDING", source_participant_id=None
+            # 대기 중에는 녹음하지 않는다(소리는 #67 에서 버림)
+            status="PAUSED" if meeting.status in (MeetingStatus.PAUSED, MeetingStatus.WAITING) else "RECORDING",
+            source_participant_id=None,
         )
     else:
         stt_status, recording_status, source = live_status
@@ -203,8 +212,9 @@ async def get_state(
             meeting_mode=MeetingMode(meeting.meeting_mode),
             status=MeetingStatus(meeting.status),
             connected_count=manager.count(meeting_id),
+            attendee_count=meeting.attendee_count,
             invite=InviteOut(code=meeting.id, url=invite_url(meeting.id), expires_at=meeting.expires_at),
-            timer=build_snapshot(meeting, current, utcnow()),
+            timer=build_snapshot(meeting, shown, now),
             agendas=[
                 StateAgenda(
                     agenda_id=a.id,

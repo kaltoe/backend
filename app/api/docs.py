@@ -256,6 +256,7 @@ STATE = {
     "meetingMode": "IN_PERSON",
     "status": "IN_PROGRESS",
     "connectedCount": 3,
+    "attendeeCount": 4,
     "invite": INVITE,
     "timer": timer(serverNow="2026-11-03T14:00:31+09:00", totalElapsedSeconds=31, agendaElapsedSeconds=31),
     "agendas": [agenda | {"actualSeconds": None} for agenda in AGENDAS[:2]],
