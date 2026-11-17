@@ -35,6 +35,7 @@ class MeetingMode(StrEnum):
 
 
 class MeetingStatus(StrEnum):
+    WAITING = "WAITING"  # 만들었지만 아직 [회의 시작] 전. 타이머가 흐르지 않는다
     IN_PROGRESS = "IN_PROGRESS"
     PAUSED = "PAUSED"
     ENDED = "ENDED"
@@ -99,6 +100,7 @@ class Meeting(Base):
         ),
         CheckConstraint("planned_total_minutes BETWEEN 1 AND 180", name="planned_total_minutes"),
         CheckConstraint(one_of("status", MeetingStatus), name="status"),
+        CheckConstraint("(status = 'WAITING') = (started_at IS NULL)", name="started_at"),
         CheckConstraint("(status = 'PAUSED') = (paused_at IS NOT NULL)", name="paused_at"),
         CheckConstraint("paused_total_seconds >= 0", name="paused_total_seconds"),
         CheckConstraint("(status = 'ENDED') = (ended_at IS NOT NULL)", name="ended_at"),
@@ -120,11 +122,11 @@ class Meeting(Base):
     meeting_mode: Mapped[str] = mapped_column(String(12), server_default=MeetingMode.IN_PERSON.value)
     target_total_minutes: Mapped[int | None] = mapped_column(Integer)
     planned_total_minutes: Mapped[int] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(12), server_default=MeetingStatus.IN_PROGRESS.value)
+    status: Mapped[str] = mapped_column(String(12), server_default=MeetingStatus.WAITING.value)
     consent_agreed_at: Mapped[datetime] = mapped_column(tz())
     # 진행자 복구 키의 bcrypt 해시. 평문은 저장하지 않는다
     host_recovery_key_hash: Mapped[str] = mapped_column(String(255))
-    started_at: Mapped[datetime] = mapped_column(tz())
+    started_at: Mapped[datetime | None] = mapped_column(tz())  # [회의 시작] 시각. 대기 중에는 NULL
     expires_at: Mapped[datetime] = mapped_column(tz())
     paused_at: Mapped[datetime | None] = mapped_column(tz())
     paused_total_seconds: Mapped[int] = mapped_column(Integer, server_default=text("0"))

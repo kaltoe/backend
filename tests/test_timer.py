@@ -13,6 +13,7 @@ from app.meetings.timer import (
     ensure_transition,
     judge,
     lock_meeting,
+    snapshot_agenda,
     timeline_ms,
 )
 
@@ -86,6 +87,23 @@ def test_second_agenda_elapsed_counts_from_its_start() -> None:
     assert (snap.current_agenda_id, snap.agenda_allocated_seconds, snap.agenda_elapsed_seconds) == (13, 720, 10)
 
 
+def test_waiting_meeting_shows_zero_and_first_agenda() -> None:
+    # 만든 지 5분이 지났어도 시작 전이면 0. 안건은 시작하면 진행될 첫 안건(아직 PENDING)
+    m = meeting(status="WAITING", started_at=None)
+    first = agenda(status="PENDING", recording_start_ms=None)
+    assert timeline_ms(m, at(300)) == 0
+    assert build_snapshot(m, first, at(300)).model_dump(mode="json", by_alias=True) == {
+        "serverNow": "2026-11-03T14:05:00+09:00",
+        "status": "WAITING",
+        "plannedTotalSeconds": 1800,
+        "totalElapsedSeconds": 0,
+        "pausedTotalSeconds": 0,
+        "currentAgendaId": 12,
+        "agendaAllocatedSeconds": 600,
+        "agendaElapsedSeconds": 0,
+    }
+
+
 def test_ended_meeting_freezes_at_ended_at_and_has_no_agenda() -> None:
     m = meeting(status="ENDED", ended_at=at(1600), ended_by="HOST", paused_total_seconds=80)
     snap = build_snapshot(m, None, at(5000))
@@ -115,6 +133,7 @@ def test_judge_boundaries(diff: int | None, expected: Outcome) -> None:
         ("PAUSED", MeetingStatus.IN_PROGRESS),
         ("IN_PROGRESS", MeetingStatus.ENDED),
         ("PAUSED", MeetingStatus.ENDED),
+        ("WAITING", MeetingStatus.IN_PROGRESS),  # [회의 시작]
     ],
 )
 def test_allowed_transitions(current: str, target: MeetingStatus) -> None:
@@ -128,6 +147,9 @@ def test_allowed_transitions(current: str, target: MeetingStatus) -> None:
         ("IN_PROGRESS", MeetingStatus.IN_PROGRESS, ErrorCode.INVALID_STATE),
         ("ENDED", MeetingStatus.PAUSED, ErrorCode.MEETING_ENDED),
         ("ENDED", MeetingStatus.ENDED, ErrorCode.MEETING_ENDED),
+        ("WAITING", MeetingStatus.PAUSED, ErrorCode.INVALID_STATE),  # 대기 중 일시 정지·종료는 없다
+        ("WAITING", MeetingStatus.ENDED, ErrorCode.INVALID_STATE),
+        ("ENDED", MeetingStatus.IN_PROGRESS, ErrorCode.MEETING_ENDED),
     ],
 )
 def test_rejected_transitions(current: str, target: MeetingStatus, code: ErrorCode) -> None:
@@ -156,3 +178,24 @@ async def test_lock_meeting_and_current_agenda(session: AsyncSession) -> None:
     with pytest.raises(ApiError) as exc:
         await lock_meeting(session, "NOPE00")
     assert exc.value.code is ErrorCode.MEETING_NOT_FOUND
+
+
+async def test_snapshot_agenda_is_first_agenda_while_waiting(session: AsyncSession) -> None:
+    waiting = meeting(status="WAITING", started_at=None)
+    session.add(waiting)
+    await session.flush()
+    session.add_all(
+        [
+            Agenda(meeting_id="K7Q2MX", order_index=1, title="예산", allocated_minutes=12),
+            Agenda(meeting_id="K7Q2MX", order_index=0, title="리뷰", allocated_minutes=10),
+        ]
+    )
+    await session.flush()
+    first = await snapshot_agenda(session, waiting)
+    assert first is not None and first.order_index == 0
+    assert await current_agenda(session, "K7Q2MX") is None  # 진행 중 안건은 아직 없다
+
+    waiting.status, waiting.started_at = "IN_PROGRESS", START
+    first.status, first.recording_start_ms = "IN_PROGRESS", 0
+    await session.flush()
+    assert await snapshot_agenda(session, waiting) is first  # 시작하면 진행 중 안건
