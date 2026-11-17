@@ -65,6 +65,7 @@ class AgendaChanged(CamelModel):
         ErrorCode.HOST_ONLY,
         ErrorCode.LAST_AGENDA,
         ErrorCode.AGENDA_CHANGED,
+        ErrorCode.INVALID_STATE,
         ErrorCode.MEETING_ENDED,
         field="fromAgendaId",
     ),
@@ -78,6 +79,8 @@ async def next_agenda(
     meeting = await timer.lock_meeting(session, meeting_id)
     if meeting.status == MeetingStatus.ENDED:
         raise ApiError(ErrorCode.MEETING_ENDED)
+    if meeting.status == MeetingStatus.WAITING:  # 시작 전. 시작은 API-19
+        raise ApiError(ErrorCode.INVALID_STATE)
     current = await timer.current_agenda(session, meeting_id)
     # 다른 회의의 안건 ID 도 진행 중 안건과 다르므로 같은 409 다
     if current is None or current.id != body.from_agenda_id:

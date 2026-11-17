@@ -362,9 +362,9 @@ async def test_audio_channel_feeds_by_meeting_mode(
         await until(lambda: not live.lives[r.code].devices)  # 연결이 끊기면 후보에서 빠진다
 
         remote = (
-            await r.client.post(
-                "/api/v1/meetings",
-                json={
+            await started(
+                r.client,
+                {
                     "title": "원격 회의",
                     "consentAgreed": True,
                     "meetingMode": "REMOTE",
