@@ -15,6 +15,7 @@ from app.db.models import Utterance
 from app.db.session import SessionFactory
 from app.realtime.manager import manager
 from app.stt import live
+from tests.conftest import started
 from tests.test_agendas import THREE_AGENDAS, bearer, create
 from tests.test_realtime import room
 
@@ -397,7 +398,7 @@ async def test_remote_opens_a_session_per_device(
     opened: list[FakeSession],
     events: list[tuple[str, Any]],
 ) -> None:
-    created = (await client.post("/api/v1/meetings", json=THREE_AGENDAS | {"meetingMode": "REMOTE"})).json()["data"]
+    created = (await started(client, THREE_AGENDAS | {"meetingMode": "REMOTE"})).json()["data"]
     code = created["meetingId"]
     boss = (created["host"]["participantId"], created["host"]["name"])
     joined = (await client.post(f"/api/v1/meetings/{code}/sign-in", json={"name": "민지"})).json()["data"]

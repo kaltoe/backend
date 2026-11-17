@@ -12,6 +12,7 @@ from app.db.models import Agenda, Meeting, Participant
 from app.db.session import get_engine, get_sessionmaker
 from app.main import create_app
 from app.meetings import timer
+from tests.conftest import started
 from tests.test_realtime import nothing_arrives, ready, receive, room
 
 T0 = timer.utcnow().replace(microsecond=0) - timedelta(hours=1)
@@ -32,7 +33,7 @@ def bearer(token: str) -> dict[str, str]:
 
 
 async def create(client: httpx.AsyncClient) -> dict[str, Any]:
-    data: dict[str, Any] = (await client.post("/api/v1/meetings", json=THREE_AGENDAS)).json()["data"]
+    data: dict[str, Any] = (await started(client, THREE_AGENDAS)).json()["data"]
     return data
 
 

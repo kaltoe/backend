@@ -1,6 +1,7 @@
-"""API-02 회의 생성 = 시작. POST /api/v1/meetings (토큰 불필요)
+"""API-02 회의 생성. POST /api/v1/meetings (토큰 불필요)
 
-만드는 순간 회의와 타이머가 시작된다. 첫 안건만 IN_PROGRESS(recording_start_ms = 0), 나머지는 PENDING.
+만들면 대기(WAITING) 상태다. started_at 이 비어 있고 안건은 모두 PENDING 이라 타이머가 흐르지 않는다.
+진행자가 대기 화면에서 [회의 시작](API-19, start.py)을 누를 때 시작된다.
 진행자 토큰과 진행자 복구 키는 이 응답에서만 나간다.
 """
 
@@ -56,10 +57,10 @@ async def create(session: AsyncSession, body: CreateMeetingRequest, now: datetim
         meeting_mode=body.meeting_mode.value,
         target_total_minutes=body.target_total_minutes,
         planned_total_minutes=body.planned_total_minutes,
-        status=MeetingStatus.IN_PROGRESS.value,
+        status=MeetingStatus.WAITING.value,
         consent_agreed_at=now,
         host_recovery_key_hash=await codes.hash_secret(recovery_key),
-        started_at=now,
+        started_at=None,
         expires_at=now + MEETING_TTL,
         paused_total_seconds=0,
         attendee_count=body.attendee_count,
@@ -73,8 +74,7 @@ async def create(session: AsyncSession, body: CreateMeetingRequest, now: datetim
             title=a.title,
             keywords=a.keywords,
             allocated_minutes=a.allocated_minutes,
-            status=(AgendaStatus.IN_PROGRESS if i == 0 else AgendaStatus.PENDING).value,
-            recording_start_ms=0 if i == 0 else None,
+            status=AgendaStatus.PENDING.value,
         )
         for i, a in enumerate(body.agendas)
     ]
@@ -88,7 +88,7 @@ async def create(session: AsyncSession, body: CreateMeetingRequest, now: datetim
             meeting_id=meeting.id,
             title=meeting.title,
             meeting_mode=body.meeting_mode,
-            status=MeetingStatus.IN_PROGRESS,
+            status=MeetingStatus.WAITING,
             invite=InviteOut(code=meeting.id, url=invite_url(meeting.id), expires_at=meeting.expires_at),
             timer=build_snapshot(meeting, agendas[0], now),
             agendas=[
@@ -114,10 +114,12 @@ async def create(session: AsyncSession, body: CreateMeetingRequest, now: datetim
 @router.post(
     "/meetings",
     status_code=201,
-    summary="API-02 회의 생성 = 시작",
+    summary="API-02 회의 생성",
     description=(
-        "셋업의 [회의 시작하기]. 만드는 즉시 회의와 타이머가 시작되고(첫 안건만 진행 중), 진행자 토큰(`accessToken`)과 "
-        '진행자 복구 키를 돌려줍니다. 진행자 이름은 "진행자"이고 초대 코드는 14일 뒤 만료됩니다.\n\n'
+        "셋업의 [회의 시작하기]. 회의를 대기(`WAITING`) 상태로 만들고 진행자 토큰(`accessToken`)과 진행자 복구 키를 "
+        "돌려줍니다. 안건은 모두 `PENDING`이고 타이머는 멈춰 있습니다(경과 0, `currentAgendaId`는 첫 안건). "
+        "진행자가 대기 화면에서 [회의 시작](API-19)을 누르면 타이머가 흐릅니다. "
+        '진행자 이름은 "진행자"이고 초대 코드는 14일 뒤 만료됩니다.\n\n'
         "`Idempotency-Key`(선택): 셋업에 들어올 때 만든 UUID를 보내면, 10분 안에 같은 키가 다시 와도 "
         "회의를 새로 만들지 않고 처음 응답을 그대로 돌려줍니다."
     ),

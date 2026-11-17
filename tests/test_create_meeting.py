@@ -51,7 +51,7 @@ async def meeting_count(session: AsyncSession) -> int:
     return await session.scalar(select(func.count()).select_from(Meeting)) or 0
 
 
-async def test_create_meeting_starts_meeting(client: httpx.AsyncClient, session: AsyncSession) -> None:
+async def test_create_meeting_waits_for_start(client: httpx.AsyncClient, session: AsyncSession) -> None:
     res = await client.post("/api/v1/meetings", json=payload())
     assert res.status_code == 201
     body = res.json()
@@ -72,14 +72,15 @@ async def test_create_meeting_starts_meeting(client: httpx.AsyncClient, session:
 
     code = data["meetingId"]
     assert CODE.match(code)
-    assert (data["title"], data["meetingMode"], data["status"]) == ("마케팅 전략 주간 회의", "IN_PERSON", "IN_PROGRESS")
+    assert (data["title"], data["meetingMode"], data["status"]) == ("마케팅 전략 주간 회의", "IN_PERSON", "WAITING")
     assert data["invite"]["code"] == code
     assert data["invite"]["url"] == f"http://localhost:3000/m/{code}"
 
     timer = data["timer"]
     first_id = data["agendas"][0]["agendaId"]
+    # 대기 중이라 타이머는 멈춰 있고, 안건은 시작하면 진행될 첫 안건
     assert {k: v for k, v in timer.items() if k != "serverNow"} == {
-        "status": "IN_PROGRESS",
+        "status": "WAITING",
         "plannedTotalSeconds": 1800,
         "totalElapsedSeconds": 0,
         "pausedTotalSeconds": 0,
@@ -94,7 +95,7 @@ async def test_create_meeting_starts_meeting(client: httpx.AsyncClient, session:
     assert [
         (a["orderIndex"], a["title"], a["keywords"], a["allocatedSeconds"], a["status"]) for a in data["agendas"]
     ] == [
-        (0, "지난주 캠페인 성과 리뷰", ["CTR", "전환율"], 600, "IN_PROGRESS"),
+        (0, "지난주 캠페인 성과 리뷰", ["CTR", "전환율"], 600, "PENDING"),
         (1, "4분기 예산 검토", ["예산", "광고비"], 720, "PENDING"),
         (2, "다음 주 액션 아이템", ["담당자", "일정"], 480, "PENDING"),
     ]
@@ -103,7 +104,7 @@ async def test_create_meeting_starts_meeting(client: httpx.AsyncClient, session:
     caller = read_token(data["accessToken"], code)
     assert caller is not None and caller.is_host and caller.participant_id == data["host"]["participantId"]
 
-    # DB: 복구 키는 해시만, 첫 안건만 녹음 시작 위치 0
+    # DB: 복구 키는 해시만. 시작 전이라 시작 시각·녹음 시작 위치가 없다
     meeting = await session.get(Meeting, code)
     assert meeting is not None
     key = data["hostRecoveryKey"]
@@ -111,9 +112,9 @@ async def test_create_meeting_starts_meeting(client: httpx.AsyncClient, session:
     assert key not in meeting.host_recovery_key_hash
     assert bcrypt.checkpw(key.encode(), meeting.host_recovery_key_hash.encode())
     assert (meeting.planned_total_minutes, meeting.target_total_minutes, meeting.attendee_count) == (30, 30, 4)
-    assert meeting.started_at == meeting.consent_agreed_at
+    assert (meeting.status, meeting.started_at) == ("WAITING", None)
     rows = (await session.scalars(select(Agenda).where(Agenda.meeting_id == code).order_by(Agenda.order_index))).all()
-    assert [r.recording_start_ms for r in rows] == [0, None, None]
+    assert [(r.status, r.recording_start_ms) for r in rows] == [("PENDING", None)] * 3
     host = await session.get(Participant, data["host"]["participantId"])
     assert host is not None and host.password_hash is None
 

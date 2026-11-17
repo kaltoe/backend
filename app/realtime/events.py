@@ -51,6 +51,11 @@ class TimerSync(CamelModel):
     timer: TimerSnapshot
 
 
+class MeetingStarted(CamelModel):
+    started_at: KstDatetime
+    timer: TimerSnapshot
+
+
 class MeetingPaused(CamelModel):
     paused_at: KstDatetime
     timer: TimerSnapshot

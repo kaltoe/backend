@@ -18,7 +18,7 @@ from app.meetings.timer import utcnow
 from app.realtime import manager as manager_module
 from app.realtime import ws as ws_module
 from app.realtime.manager import manager
-from tests.conftest import ws_client
+from tests.conftest import started, ws_client
 
 CREATE = {
     "title": "마케팅 전략 주간 회의",
@@ -49,9 +49,11 @@ class Room:
 
 
 @asynccontextmanager
-async def room(app: FastAPI) -> AsyncIterator[Room]:
+async def room(app: FastAPI, start: bool = True) -> AsyncIterator[Room]:
+    """start=False 면 대기(WAITING) 회의."""
     async with ws_client(app) as client:
-        created = (await client.post("/api/v1/meetings", json=CREATE)).json()["data"]
+        res = await started(client, CREATE) if start else await client.post("/api/v1/meetings", json=CREATE)
+        created = res.json()["data"]
         yield Room(client, created)
 
 
@@ -93,7 +95,7 @@ async def close_code(ws: AsyncWebSocketSession) -> int:
 # 연결 오류 close code
 async def test_close_codes(app: FastAPI, session: AsyncSession) -> None:
     async with room(app) as r:
-        other = (await r.client.post("/api/v1/meetings", json=CREATE)).json()["data"]
+        other = (await started(r.client, CREATE)).json()["data"]
         for token, code, expected in [
             (None, None, 4401),
             ("not-a-token", None, 4401),
@@ -330,7 +332,7 @@ async def test_cancel_during_joined_broadcast_still_cleans_up(
     app: FastAPI, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # 막힌 전송 때문에 받기 루프가 participant.joined 를 보내는 도중 취소돼도, 연결이 목록에 남지 않아야 한다
-    created = (await client.post("/api/v1/meetings", json=CREATE)).json()["data"]
+    created = (await started(client, CREATE)).json()["data"]
     code = created["meetingId"]
     original = manager.broadcast
 

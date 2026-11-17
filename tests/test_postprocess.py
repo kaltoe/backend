@@ -17,6 +17,7 @@ from app.db.models import Agenda, Meeting, Utterance
 from app.db.session import SessionFactory
 from app.meetings import postprocess
 from app.stt import clova
+from tests.conftest import started
 from tests.test_agendas import T0, THREE_AGENDAS, bearer
 
 URL = "/api/v1/internal/clova/callback"
@@ -60,7 +61,7 @@ def fake_clova(monkeypatch: pytest.MonkeyPatch) -> Clova:
 
 async def ended(client: httpx.AsyncClient, session: AsyncSession, body: dict[str, Any] = THREE_AGENDAS) -> str:
     """종료된 회의. 안건 녹음 구간은 0~10분, 10~22분이고 세 번째 안건은 끝내지 못했다."""
-    created = (await client.post("/api/v1/meetings", json=body)).json()["data"]
+    created = (await started(client, body)).json()["data"]
     code: str = created["meetingId"]
     await client.post(f"/api/v1/meetings/{code}/end", headers=bearer(created["accessToken"]))
     agendas = list(await session.scalars(select(Agenda).where(Agenda.meeting_id == code).order_by(Agenda.order_index)))

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import create_access_token
 from app.db.models import Agenda, Meeting, Utterance
 from app.meetings.timer import utcnow
+from tests.conftest import started
 from tests.test_realtime import ready, room
 
 TWO_AGENDAS = {
@@ -38,7 +39,7 @@ FIELDS = {
 
 
 async def create(client: httpx.AsyncClient, **overrides: Any) -> dict[str, Any]:
-    data: dict[str, Any] = (await client.post("/api/v1/meetings", json=TWO_AGENDAS | overrides)).json()["data"]
+    data: dict[str, Any] = (await started(client, TWO_AGENDAS | overrides)).json()["data"]
     return data
 
 

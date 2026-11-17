@@ -15,6 +15,7 @@ from app.meetings import sign_in as sign_in_module
 from app.meetings.sign_in import _new_member, normalize_recovery_key
 from app.meetings.timer import utcnow
 from app.realtime.manager import manager
+from tests.conftest import started
 
 CREATE = {
     "title": "마케팅 전략 주간 회의",
@@ -42,7 +43,7 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> Clock:
 
 @pytest.fixture
 async def meeting(client: httpx.AsyncClient) -> dict[str, Any]:
-    res = await client.post("/api/v1/meetings", json=CREATE)
+    res = await started(client, CREATE)
     assert res.status_code == 201
     data: dict[str, Any] = res.json()["data"]
     return data
@@ -248,7 +249,7 @@ async def test_concurrent_wrong_keys_cannot_bypass_lock(session: AsyncSession, m
 
 async def test_recovery_key_lock_per_meeting(client: httpx.AsyncClient, meeting: dict[str, Any], clock: Clock) -> None:
     code = meeting["meetingId"]
-    other = (await client.post("/api/v1/meetings", json=CREATE)).json()["data"]
+    other = (await started(client, CREATE)).json()["data"]
     for _ in range(5):
         assert (await sign_in(client, code, hostRecoveryKey="AAAA-AAAA")).status_code == 401
 

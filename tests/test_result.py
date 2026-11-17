@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import to_kst_iso
 from app.db.models import Meeting, OfftopicEvent
+from tests.conftest import started
 from tests.test_agendas import T0, THREE_AGENDAS, at, bearer, create, error, go_next, start_at_t0
 
 
@@ -22,7 +23,7 @@ async def finished(
     body: dict[str, Any] = THREE_AGENDAS,
 ) -> tuple[dict[str, Any], list[int]]:
     """리뷰(10분)를 710초, 예산(12분)을 560초 하고 종료. 액션(8분)은 하지 못했다. 진행자 + 참가자 2명."""
-    created = (await client.post("/api/v1/meetings", json=body)).json()["data"]
+    created = (await started(client, body)).json()["data"]
     code = created["meetingId"]
     ids = [a["agendaId"] for a in created["agendas"]]
     await start_at_t0(session, code)
@@ -132,9 +133,9 @@ async def test_on_time_within_60_seconds_and_remote(
     client: httpx.AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     created = (
-        await client.post(
-            "/api/v1/meetings",
-            json=THREE_AGENDAS
+        await started(
+            client,
+            THREE_AGENDAS
             | {"meetingMode": "REMOTE", "agendas": [{"title": "리뷰", "keywords": [], "allocatedMinutes": 10}]},
         )
     ).json()["data"]
