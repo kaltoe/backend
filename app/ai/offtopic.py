@@ -1,12 +1,13 @@
 """사담 판정(#23). PoC 2 최종 설정(OpenAI Decisions, gpt-6-luna)에 키워드를 더하고 질문을 2개로 바꿨다.
 
-진행 중인 회의마다 OFFTOPIC_INTERVAL_SECONDS(기본 5초)마다 최근 30초 대화를 판정한다.
-- 입력: 회의 제목, 전체 안건(현재 표시), 현재 안건과 그 키워드, 최근 30초 대화
-- 질문 2개(predicate) 중 하나라도 확률 0.5 이상이면 '사담 높음'.
-  2회 연속이면 offtopic_events 에 저장하고 offtopic.warning
-- 경고 뒤 30초는 판정하지 않고, 연속 횟수는 0부터 다시 센다
-- 건너뛰기: 일시 정지 중(진행 중 회의만 본다), 안건이 시작된 지 20초 안, 같은 안건에서 [관련 있는 얘기예요]를
-  누른 뒤 60초(#24), 최근 30초 대화가 15자 미만. 건너뛰면 연속이 끊긴다(안건이 바뀌면 20초를 건너뛰므로 0부터 센다)
+아래 괄호 속 값은 기본값이고 환경 변수 OFFTOPIC_*(app/config.py)로 바꾼다.
+진행 중인 회의마다 판정 주기(5초)마다 최근 대화(30초)를 판정한다.
+- 입력: 회의 제목, 전체 안건(현재 표시), 현재 안건과 그 키워드, 최근 대화
+- 질문 2개(predicate) 중 하나라도 확률이 기준(0.5) 이상이면 '사담 높음'.
+  연속(2회)이면 offtopic_events 에 저장하고 offtopic.warning
+- 경고 뒤(30초)는 판정하지 않고, 연속 횟수는 0부터 다시 센다
+- 건너뛰기: 일시 정지 중(진행 중 회의만 본다), 안건이 시작된 지(20초) 안, 같은 안건에서 [관련 있는 얘기예요]를
+  누른 뒤(60초, #24), 최근 대화가 15자 미만. 건너뛰면 연속이 끊긴다(안건이 바뀌면 시작 구간을 건너뛰므로 0부터 센다)
 - 창(window)은 지금 안건이 시작된 뒤로만 잡는다. 창과 1초 이상 겹친 확정 자막은 문장 전체를 넣는다.
   대면은 기준 기기 자막만 저장되고, 비대면은 기기별 자막이 녹음 위치 순으로 섞인다(말한 사람 이름을 붙인다)
 - 모델 호출은 실패하면 1·2·4초 뒤 다시 시도한다(요청당 10초 제한). 그래도 실패한 판정이 3회 연속이면
@@ -39,17 +40,13 @@ logger = logging.getLogger(__name__)
 MODEL = "gpt-6-luna"
 REQUEST_TIMEOUT_SECONDS = 10.0
 RETRY_DELAYS = (1.0, 2.0, 4.0)  # 최초 1회 + 이만큼 쉬고 다시
-WINDOW_MS = 30_000
 MIN_OVERLAP_MS = 1_000  # 창과 이만큼 겹친 문장은 전문을 넣는다
 MIN_CHARS = 15  # 창 글자 수가 이보다 적으면 판정하지 않는다
-AGENDA_GRACE_MS = 20_000  # 안건이 시작된 뒤 판정하지 않는 시간
-THRESHOLD = 0.5
-STREAK = 2
 FAIL_LIMIT = 3
-AFTER_WARNING = timedelta(seconds=30)  # 경고 뒤 판정하지 않는 시간
 AUTO_CLOSE_SECONDS = 5
+# 창 길이·안건 시작 뒤 쉬는 시간·경고 뒤 쉬는 시간·기준 확률·연속 횟수는 설정(app/config.py OFFTOPIC_*)
 
-# 둘 중 하나라도 THRESHOLD 이상이면 사담 높음
+# 둘 중 하나라도 offtopic_threshold 이상이면 사담 높음
 QUESTIONS = {
     "q_current": "최근 대화는 현재 안건 혹은 키워드와 관련된 내용이 아니다.",
     "q_chat": "최근 대화는 회의 주제와 무관한 사적인 잡담이다.",
@@ -124,6 +121,7 @@ def window(lines: list[tuple[str | None, str, int, int | None]], lo: int, hi: in
 async def check(sessions: SessionFactory, meeting_id: str, now: datetime) -> None:
     """회의 하나를 한 번 판정한다."""
     judge = judges.setdefault(meeting_id, Judge())
+    settings = get_settings()
     async with sessions() as session:
         meeting = await session.get(Meeting, meeting_id)
         if meeting is None or meeting.status != MeetingStatus.IN_PROGRESS:
@@ -133,16 +131,17 @@ async def check(sessions: SessionFactory, meeting_id: str, now: datetime) -> Non
             return
         position = timer.timeline_ms(meeting, now)
         agenda_start = agenda.recording_start_ms or 0
-        if position - agenda_start < AGENDA_GRACE_MS or (judge.quiet_until is not None and now < judge.quiet_until):
+        in_grace = position - agenda_start < settings.offtopic_agenda_grace_seconds * 1000
+        if in_grace or (judge.quiet_until is not None and now < judge.quiet_until):
             judge.highs = 0
             return
-        dismiss_quiet = timedelta(seconds=get_settings().offtopic_dismiss_quiet_seconds)
+        dismiss_quiet = timedelta(seconds=settings.offtopic_dismiss_quiet_seconds)
         dismissed = await session.scalar(
             select(OfftopicEvent.id)
             .where(OfftopicEvent.agenda_id == agenda.id, OfftopicEvent.dismissed_at >= now - dismiss_quiet)
             .limit(1)
         )
-        lo = max(agenda_start, position - WINDOW_MS)  # 창이 이전 안건으로 넘어가지 않게
+        lo = max(agenda_start, position - settings.offtopic_window_seconds * 1000)  # 창이 이전 안건으로 넘어가지 않게
         rows = await session.execute(
             select(Utterance.speaker_label, Utterance.text, Utterance.offset_ms, Utterance.duration_ms)
             .where(
@@ -179,11 +178,11 @@ async def check(sessions: SessionFactory, meeting_id: str, now: datetime) -> Non
     await set_state(meeting_id, judge, "OK")
 
     score = max(probs.values(), default=None)  # 모델이 둘 다 거절하면 판정 없음
-    if score is None or score < THRESHOLD:
+    if score is None or score < settings.offtopic_threshold:
         judge.highs = 0
         return
     judge.highs += 1
-    if judge.highs < STREAK:
+    if judge.highs < settings.offtopic_streak:
         return
     judge.highs = 0
 
@@ -194,7 +193,7 @@ async def check(sessions: SessionFactory, meeting_id: str, now: datetime) -> Non
         moved = meeting is None or meeting.status != MeetingStatus.IN_PROGRESS
         if moved or current_agenda is None or current_agenda.id != agenda_id:
             return
-        judge.quiet_until = now + AFTER_WARNING
+        judge.quiet_until = now + timedelta(seconds=settings.offtopic_after_warning_seconds)
         event = OfftopicEvent(
             meeting_id=meeting_id, agenda_id=agenda_id, score=score, window_text=conversation, detected_at=now
         )

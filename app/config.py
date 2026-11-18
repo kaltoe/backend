@@ -38,7 +38,13 @@ class Settings(BaseSettings):
 
     # OpenAI — 사담 판정 · 요약
     openai_api_key: str = ""
-    offtopic_interval_seconds: int = Field(default=5, ge=5, le=15)  # 사담 판정 주기(PoC 2: 5초)
+    # 사담 판정 값(app/ai/offtopic.py). 기본값은 PoC 2 결과. 운영하며 다시 배포하지 않고 조정한다
+    offtopic_interval_seconds: int = Field(default=5, ge=2, le=15)  # 판정 주기
+    offtopic_window_seconds: int = Field(default=30, ge=5, le=60)  # 판정에 넣는 최근 대화 길이
+    offtopic_agenda_grace_seconds: int = Field(default=20, ge=0)  # 안건이 시작된 뒤 판정하지 않는 시간
+    offtopic_after_warning_seconds: int = Field(default=30, ge=0)  # 경고 뒤 판정하지 않는 시간
+    offtopic_threshold: float = Field(default=0.5, gt=0, lt=1)  # 질문 중 하나라도 이 확률 이상이면 사담 높음
+    offtopic_streak: int = Field(default=2, ge=1)  # 사담 높음이 이만큼 연속이면 경고
     # [관련 있는 얘기예요]를 누른 뒤 같은 안건에서 사담 판정을 쉬는 시간(API-09)
     offtopic_dismiss_quiet_seconds: int = Field(default=60, ge=0)
 
