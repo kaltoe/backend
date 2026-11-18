@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -245,3 +246,21 @@ async def test_refresh_waits_for_first_summary_and_skips_without_clova(
     summary.running.discard(code)
     await waiting
     assert [c[3] for c in model.calls] == ["[화자 1] CLOVA 문장"]
+
+
+@pytest.mark.parametrize(("lines", "ok"), [([], True), (["a", "b", "c"], True), (["a", "b"], False)])
+async def test_model_answer_is_three_lines_or_empty(
+    monkeypatch: pytest.MonkeyPatch, lines: list[str], ok: bool
+) -> None:
+    """사담뿐인 안건은 모델이 빈 배열을 준다. 그 밖의 줄 수는 형식 오류."""
+
+    class Responses:
+        async def create(self, **_: Any) -> Any:
+            return type("Resp", (), {"output_text": json.dumps({"lines": lines})})()
+
+    monkeypatch.setattr(summary, "openai_client", lambda: type("Client", (), {"responses": Responses()})())
+    if ok:
+        assert await summary.ask_model("회의", "안건", [], "발언") == lines
+    else:
+        with pytest.raises(ValueError):
+            await summary.ask_model("회의", "안건", [], "발언")
