@@ -4,7 +4,7 @@
 - 끝낸 안건(DONE)만. 끝내지 못한 PENDING 안건은 빠진다
 - 판정은 ±60초(timer.judge). 회의 소요 시간을 계산하지 못하면(UNKNOWN) 회의·안건 시간 값이 모두 null 이고
   outcome 은 UNKNOWN
-- offtopicCount: 그 안건에서 보낸 사담 경고 수(닫힌 경고 포함)
+- offtopicCount: 그 안건에서 보낸 사담 경고 수([관련 있는 얘기예요]로 닫힌 경고는 빼고 센다)
 - 끝나지 않은 회의는 409 INVALID_STATE(2026-11 결정)
 """
 
@@ -77,7 +77,8 @@ class MeetingResult(CamelModel):
     description=(
         "결과 화면 진입. DB 값만 읽어 즉시 응답합니다(요약 문장·녹음 주소는 없음). 끝내지 못한 안건은 빠집니다. "
         "판정은 ±60초 허용이고, 소요 시간을 계산하지 못하면(`UNKNOWN`) 시간 값이 모두 null 입니다. "
-        "`offtopicCount`는 그 안건에서 보낸 사담 경고 수(닫힌 경고 포함)입니다. 끝나지 않은 회의는 409입니다."
+        "`offtopicCount`는 그 안건에서 보낸 사담 경고 수입니다([관련 있는 얘기예요]로 닫힌 경고는 세지 않습니다). "
+        "끝나지 않은 회의는 409입니다."
     ),
     responses=docs.success(docs.RESULT_EXAMPLE) | docs.errors(ErrorCode.UNAUTHORIZED, ErrorCode.INVALID_STATE),
 )
@@ -103,7 +104,7 @@ async def build_result(session: AsyncSession, meeting: Meeting) -> MeetingResult
         (
             await session.execute(
                 select(OfftopicEvent.agenda_id, func.count())
-                .where(OfftopicEvent.meeting_id == meeting_id)
+                .where(OfftopicEvent.meeting_id == meeting_id, OfftopicEvent.dismissed_at.is_(None))
                 .group_by(OfftopicEvent.agenda_id)
             )
         ).all()

@@ -55,7 +55,7 @@ async def test_result_has_spec_shape(
     created, (review, budget, action) = await finished(client, session, monkeypatch)
     code = created["meetingId"]
     await warn(session, code, review)
-    await warn(session, code, review, dismissed=True)  # 닫힌 경고도 센다
+    await warn(session, code, review, dismissed=True)  # 닫힌 경고는 세지 않는다
     await warn(session, code, action)  # 끝내지 못한 안건은 빠지므로 보이지 않는다
 
     res = await result(client, created)
@@ -83,7 +83,7 @@ async def test_result_has_spec_shape(
                 "actualSeconds": 710,
                 "diffSeconds": 110,
                 "outcome": "OVERTIME",
-                "offtopicCount": 2,
+                "offtopicCount": 1,
                 "recordingStartMs": 0,
                 "recordingEndMs": 710_000,
             },
