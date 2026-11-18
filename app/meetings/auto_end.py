@@ -2,6 +2,7 @@
 
 - 조건 1: WS-01 에 접속한 사람이 10분 넘게 아무도 없음
 - 조건 2: 벽시계로 started_at + 목표 시간 + 60분이 지남(일시 정지 시간도 포함)
+- 대기(WAITING) 회의는 두 조건 모두 보지 않는다(시작 전이라 목표 시간도, 부재 시간도 세지 않음)
 - 종료는 API-08 과 같은 finish() 를 ended_by=AUTO 로 부르고, 응답 없이 meeting.ended 만 보낸다
 
 앱이 뜰 때 sweep_loop 를 띄워 30초마다 검사한다. 비어 있기 시작한 시각은 서버 메모리에만 두므로,
@@ -32,11 +33,14 @@ empty_since: dict[str, datetime] = {}
 
 
 def due(meeting: Meeting, now: datetime) -> bool:
-    """자동 종료할 회의인지. 접속자 부재 시각(empty_since)도 여기서 갱신한다."""
-    if (
-        meeting.started_at is not None
-        and now >= meeting.started_at + timedelta(minutes=meeting.planned_total_minutes) + OVERTIME_LIMIT
-    ):
+    """자동 종료할 회의인지. 접속자 부재 시각(empty_since)도 여기서 갱신한다.
+
+    대기(WAITING) 회의는 끝내지 않는다. 대기 중 종료는 없고(API-08 도 409), 접속자 부재도 시작한 뒤부터 센다.
+    """
+    if meeting.status == MeetingStatus.WAITING or meeting.started_at is None:
+        empty_since.pop(meeting.id, None)
+        return False
+    if now >= meeting.started_at + timedelta(minutes=meeting.planned_total_minutes) + OVERTIME_LIMIT:
         return True
     if manager.count(meeting.id) > 0:
         empty_since.pop(meeting.id, None)

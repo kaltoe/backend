@@ -6,7 +6,7 @@
 
 녹음: 모든 기기 소리를 RECORDINGS_DIR/{meetingId}/{participantId}.wav 의 녹음 위치(회의 타임라인 ms)에 쓴다.
 비어 있는 구간은 0(무음)으로 채워지므로 WAV 의 0ms 가 회의 시작이다. 소리를 받은 구간은 같은 폴더 {participantId}.json.
-- 일시 정지 중에 온 소리는 버린다
+- 일시 정지 중, 시작 전(대기) 에 온 소리는 버린다. 연결은 받으므로 시작 뒤 첫 소리가 녹음 위치 0 근처에 들어간다
 - 재연결이면 startOffsetMs 부터 이어 쓴다. 지금 위치보다 10분 넘게 앞선 값은 거부한다(1008)
 - 지금 위치보다 1초 넘게 늦은 소리(재연결 버퍼)는 WAV 에만 쓰고 실시간 자막으로 넘기지 않는다
 """
@@ -173,7 +173,7 @@ async def audio_channel(
             if meeting is None or meeting.status == MeetingStatus.ENDED:
                 await websocket.close(code=CLOSE_ENDED)
                 break
-            if meeting.status == MeetingStatus.PAUSED:
+            if meeting.status in (MeetingStatus.PAUSED, MeetingStatus.WAITING):  # 일시 정지·시작 전 소리는 버린다
                 continue
             pcm = pcm[: len(pcm) // 2 * 2]  # 샘플(2바이트) 단위로 맞춘다
             at, late = track.place(len(pcm), timer.timeline_ms(meeting, timer.utcnow()))
