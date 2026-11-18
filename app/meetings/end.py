@@ -96,7 +96,7 @@ async def announce(meeting_id: str, ended: MeetingEnded) -> None:
         "(`endedBy: AUTO`)."
     ),
     responses=docs.success(docs.ENDED)
-    | docs.errors(ErrorCode.UNAUTHORIZED, ErrorCode.HOST_ONLY, ErrorCode.MEETING_ENDED),
+    | docs.errors(ErrorCode.UNAUTHORIZED, ErrorCode.HOST_ONLY, ErrorCode.INVALID_STATE, ErrorCode.MEETING_ENDED),
 )
 async def end_meeting(
     meeting_id: str, host: CurrentHost, session: Annotated[AsyncSession, Depends(get_db)]
