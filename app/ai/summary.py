@@ -4,6 +4,7 @@
 - 언제(2026-11 결정): 대면·비대면 모두 종료 직후 실시간 발화로 먼저 만든다. 대면은 CLOVA 화자 분리가
   끝나면(INT-01 DONE) 그 발화로 다시 만들어 덮어쓴다. 다시 만들기가 실패하면 먼저 만든 요약을 그대로 둔다
 - 대상: 결과 화면처럼 완료(DONE)된 안건만. 발언이 없던 안건은 []
+- 안건과 관련 없는 잡담(사담)은 요약에서 뺀다. 안건 관련 발언이 하나도 없으면 모델이 [] 를 준다
 - summary_status PROCESSING → DONE, 모델 호출이 하나라도 실패하면 FAILED(API-12 로 다시 시도)
 
 5초마다 "요약할 차례인 회의"(종료, summary PROCESSING)를 찾아 만든다. 재시도·서버 재시작도 같은 곳에서 처리된다.
@@ -45,11 +46,12 @@ REFRESH_WAIT_SECONDS = 300  # 첫 요약이 끝나기를 기다리는 최대 시
 PROMPT = (
     "너는 회의록 작성 도우미야. 한 안건에서 나온 발언을 읽고 핵심을 정확히 3줄로 요약해. "
     "각 줄은 한 문장이고 '~요'로 끝나는 존댓말로 써. 숫자·결정 사항·담당자는 빠뜨리지 마. "
-    "발언에 없는 내용은 지어내지 마."
+    "발언에 없는 내용은 지어내지 마. 안건·키워드와 관련 없는 잡담(사담)은 요약에 넣지 마. "
+    "안건과 관련된 발언이 하나도 없으면 lines 를 빈 배열로 줘."
 )
 SCHEMA: dict[str, Any] = {
     "type": "object",
-    "properties": {"lines": {"type": "array", "items": {"type": "string"}, "minItems": 3, "maxItems": 3}},
+    "properties": {"lines": {"type": "array", "items": {"type": "string"}, "minItems": 0, "maxItems": 3}},
     "required": ["lines"],
     "additionalProperties": False,
 }
@@ -64,7 +66,7 @@ def openai_client() -> AsyncOpenAI:
 
 
 async def ask_model(meeting_title: str, agenda_title: str, keywords: list[str], conversation: str) -> list[str]:
-    """3줄 요약. 실패하면 예외."""
+    """3줄 요약. 안건 관련 발언이 없으면 []. 실패하면 예외."""
     user = (
         f"회의 제목: {meeting_title}\n안건: {agenda_title}\n키워드: {', '.join(keywords) or '없음'}\n\n"
         f"발언:\n{conversation}"
@@ -76,8 +78,8 @@ async def ask_model(meeting_title: str, agenda_title: str, keywords: list[str], 
         timeout=REQUEST_TIMEOUT_SECONDS,
     )
     lines = json.loads(resp.output_text)["lines"]
-    if not (isinstance(lines, list) and len(lines) == 3 and all(isinstance(x, str) and x.strip() for x in lines)):
-        raise ValueError("3줄 요약 형식이 아님")
+    if not (isinstance(lines, list) and len(lines) in (0, 3) and all(isinstance(x, str) and x.strip() for x in lines)):
+        raise ValueError("3줄(또는 빈) 요약 형식이 아님")
     return [x.strip() for x in lines]
 
 
