@@ -26,10 +26,13 @@ router = APIRouter()
 MEETING_CODE = re.compile(f"^[{CODE_ALPHABET}]{{{MEETING_CODE_LENGTH}}}$")
 
 
+JoinableStatus = Literal["WAITING", "IN_PROGRESS", "PAUSED"]  # 종료·만료는 에러라 이 값으로 오지 않는다
+
+
 class EntryInfo(CamelModel):
     meeting_id: str
     title: str
-    status: Literal["IN_PROGRESS", "PAUSED"]
+    status: JoinableStatus
     connected_count: int
     expires_at: KstDatetime
 
@@ -45,6 +48,13 @@ def ensure_joinable(meeting: Meeting | None, now: datetime) -> Meeting:
     return meeting
 
 
+def joinable_status(meeting: Meeting) -> JoinableStatus:
+    """ensure_joinable 을 통과한 회의의 상태. 대기(WAITING) 중에도 입장할 수 있다."""
+    if meeting.status == MeetingStatus.WAITING:
+        return "WAITING"
+    return "PAUSED" if meeting.status == MeetingStatus.PAUSED else "IN_PROGRESS"
+
+
 async def find_meeting(session: AsyncSession, meeting_id: str) -> Meeting | None:
     # 형식이 틀린 코드는 DB를 보지 않고 없는 회의로 처리한다
     if not MEETING_CODE.match(meeting_id):
@@ -58,7 +68,8 @@ async def find_meeting(session: AsyncSession, meeting_id: str) -> Meeting | None
     summary="API-01 회의 입장 정보 조회",
     description=(
         "메인에서 코드나 링크를 넣으면 참여 화면의 제목과 상태 배지를 보여 줍니다. 코드는 대문자 6자리입니다"
-        "(프론트가 링크의 마지막 조각을 대문자로 바꿔 보냄). `status`는 진행 중·일시 정지만 오고, "
+        "(프론트가 링크의 마지막 조각을 대문자로 바꿔 보냄). `status`는 대기·진행 중·일시 정지만 오고 "
+        "대기(`WAITING`, 진행자가 아직 시작하지 않음) 중에도 입장할 수 있습니다. "
         "`connectedCount`는 지금 접속 중인 인원입니다. 같은 IP에서 1분에 120번을 넘기면 429입니다."
     ),
     responses=docs.success(docs.ENTRY_INFO)
@@ -72,7 +83,7 @@ async def get_entry_info(meeting_id: str, session: Annotated[AsyncSession, Depen
         EntryInfo(
             meeting_id=meeting.id,
             title=meeting.title,
-            status="PAUSED" if meeting.status == MeetingStatus.PAUSED else "IN_PROGRESS",
+            status=joinable_status(meeting),
             connected_count=manager.count(meeting.id),
             expires_at=meeting.expires_at,
         )

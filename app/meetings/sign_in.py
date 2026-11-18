@@ -11,7 +11,7 @@
 """
 
 import re
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends
 from pydantic import Field, ValidationInfo, field_validator
@@ -24,11 +24,11 @@ from app.api.auth import create_access_token
 from app.api.errors import VALIDATION_MESSAGE, ApiError, ErrorCode
 from app.api.rate_limit import limit_entry_requests
 from app.api.schemas import CamelModel, Envelope, ok
-from app.db.models import MeetingStatus, Participant, Role
+from app.db.models import Participant, Role
 from app.db.session import get_db
 from app.meetings.attempts import password_failures, recovery_key_failures
 from app.meetings.codes import CODE_ALPHABET, hash_secret, verify_secret
-from app.meetings.entry import ensure_joinable, find_meeting
+from app.meetings.entry import JoinableStatus, ensure_joinable, find_meeting, joinable_status
 from app.meetings.timer import utcnow
 from app.realtime.manager import manager
 
@@ -81,7 +81,7 @@ class SignedIn(CamelModel):
     name: str
     role: Role
     is_returning: bool
-    meeting_status: Literal["IN_PROGRESS", "PAUSED"]
+    meeting_status: JoinableStatus  # WAITING 이면 참가자 대기 화면, meeting.started 를 받으면 라이브 화면
     access_token: str
 
 
@@ -199,7 +199,7 @@ async def sign_in(
             name=participant.name,
             role=Role(participant.role),
             is_returning=returning,
-            meeting_status="PAUSED" if meeting.status == MeetingStatus.PAUSED else "IN_PROGRESS",
+            meeting_status=joinable_status(meeting),
             access_token=create_access_token(participant.id, meeting.id, Role(participant.role).value),
         )
     )

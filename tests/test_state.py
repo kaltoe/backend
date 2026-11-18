@@ -25,6 +25,7 @@ FIELDS = {
     "meetingMode",
     "status",
     "connectedCount",
+    "attendeeCount",
     "invite",
     "timer",
     "agendas",
