@@ -60,8 +60,8 @@ Swagger에서는 호출할 수 없어 요약만 적습니다. 자세한 내용�
 **WS-01 상태 동기화** `wss://…/ws/meetings/{{meetingId}}?token={{accessToken}}`
 - 명령은 REST로 보내고, 결과는 이 소켓으로 전원에게 퍼집니다. 메시지는 모두 `{{ type, data, sentAt }}`입니다.
 - 클라이언트 → 서버: `ping`(25초마다), `mic.status {{ state: ON | OFF | DENIED }}`
-- 서버 → 클라이언트: `participant.joined` · `participant.left` · `participant.updated` · `meeting.paused` ·
-  `meeting.resumed` · `agenda.changed` · `meeting.ended` · `timer.sync` · `transcript.partial` ·
+- 서버 → 클라이언트: `participant.joined` · `participant.left` · `participant.updated` · `meeting.started` ·
+  `meeting.paused` · `meeting.resumed` · `agenda.changed` · `meeting.ended` · `timer.sync` · `transcript.partial` ·
   `transcript.final` · `stt.status` · `recording.status` · `error` · `pong`
 - 끊겼다가 다시 붙으면 API-04로 놓친 내용을 채웁니다.
 
@@ -216,10 +216,10 @@ CREATED = {
     "meetingId": CODE,
     "title": "마케팅 전략 주간 회의",
     "meetingMode": "IN_PERSON",
-    "status": "IN_PROGRESS",
+    "status": "WAITING",
     "invite": INVITE,
-    "timer": timer(),
-    "agendas": AGENDAS,
+    "timer": timer(status="WAITING"),
+    "agendas": [agenda | {"status": "PENDING"} for agenda in AGENDAS],
     "host": {"participantId": 1, "name": "진행자", "role": "HOST"},
     "accessToken": "eyJhbGciOi...",
     "hostRecoveryKey": "K7QM-2XPA",
@@ -276,6 +276,8 @@ STATE = {
     "offtopicStatus": "OK",
     "activeOfftopicEvent": None,
 }
+
+STARTED = {"startedAt": "2026-11-03T14:00:00+09:00", "timer": timer()}
 
 PAUSED = {
     "pausedAt": "2026-11-03T14:10:00+09:00",

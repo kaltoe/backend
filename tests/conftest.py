@@ -104,6 +104,16 @@ async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
         yield c
 
 
+async def started(client: httpx.AsyncClient, body: dict[str, Any]) -> httpx.Response:
+    """회의를 만들고(API-02, 대기) 바로 시작한다(API-19). 진행 중 회의가 필요한 테스트용. 응답은 생성 응답."""
+    created = await client.post("/api/v1/meetings", json=body)
+    data = created.json()["data"]
+    await client.post(
+        f"/api/v1/meetings/{data['meetingId']}/start", headers={"Authorization": f"Bearer {data['accessToken']}"}
+    )
+    return created
+
+
 def ws_client(app: FastAPI) -> httpx.AsyncClient:
     """WebSocket 테스트용 클라이언트. 태스크 그룹을 열므로 픽스처가 아니라 테스트 안에서 async with 로 쓴다."""
     return httpx.AsyncClient(transport=ASGIWebSocketTransport(app=app), base_url="http://test")

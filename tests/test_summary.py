@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import summary
 from app.db.models import Agenda, Meeting, Utterance
 from app.db.session import SessionFactory
+from tests.conftest import started
 from tests.test_agendas import THREE_AGENDAS, bearer, error, go_next
 
 
@@ -48,7 +49,7 @@ def model(monkeypatch: pytest.MonkeyPatch) -> Model:
 
 async def ended(client: httpx.AsyncClient, body: dict[str, Any] = THREE_AGENDAS) -> tuple[dict[str, Any], list[int]]:
     """리뷰·예산 두 안건을 끝내고 종료. 세 번째(액션)는 끝내지 못했다."""
-    created = (await client.post("/api/v1/meetings", json=body)).json()["data"]
+    created = (await started(client, body)).json()["data"]
     ids = [a["agendaId"] for a in created["agendas"]]
     await go_next(client, created, ids[0])
     await client.post(f"/api/v1/meetings/{created['meetingId']}/end", headers=bearer(created["accessToken"]))
@@ -174,7 +175,7 @@ async def test_failure_marks_failed_and_retry_reopens(
 
 
 async def test_summary_while_processing_and_auth(client: httpx.AsyncClient) -> None:
-    created = (await client.post("/api/v1/meetings", json=THREE_AGENDAS)).json()["data"]
+    created = (await started(client, THREE_AGENDAS)).json()["data"]
     code = created["meetingId"]
     res = await client.get(f"/api/v1/meetings/{code}/summary", headers=bearer(created["accessToken"]))
     assert res.json()["data"] == {"status": "PROCESSING", "agendas": []}  # 아직 끝나지 않은 회의
@@ -185,7 +186,7 @@ async def test_summary_while_processing_and_auth(client: httpx.AsyncClient) -> N
 async def test_due_right_after_end_for_both_modes(client: httpx.AsyncClient, sessions: SessionFactory) -> None:
     in_person, _ = await ended(client)  # 후처리 PROCESSING 이어도
     remote, _ = await ended(client, THREE_AGENDAS | {"meetingMode": "REMOTE"})
-    live = (await client.post("/api/v1/meetings", json=THREE_AGENDAS)).json()["data"]  # 진행 중
+    live = (await started(client, THREE_AGENDAS)).json()["data"]  # 진행 중
     due = await summary.due(sessions)
     assert in_person["meetingId"] in due and remote["meetingId"] in due  # 둘 다 종료 직후 바로 만든다
     assert live["meetingId"] not in due

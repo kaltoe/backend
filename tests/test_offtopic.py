@@ -13,6 +13,7 @@ from app.db.models import Meeting, MeetingStatus, OfftopicEvent, Utterance
 from app.db.session import SessionFactory
 from app.meetings import timer
 from app.realtime.manager import manager
+from tests.conftest import started
 from tests.test_agendas import T0, at, bearer, start_at_t0
 
 BODY = {
@@ -79,7 +80,7 @@ def model(monkeypatch: pytest.MonkeyPatch) -> Model:
 
 
 async def setup(client: httpx.AsyncClient, session: AsyncSession, body: dict[str, Any] = BODY) -> tuple[str, int, str]:
-    created = (await client.post("/api/v1/meetings", json=body)).json()["data"]
+    created = (await started(client, body)).json()["data"]
     await start_at_t0(session, created["meetingId"])
     return created["meetingId"], created["agendas"][0]["agendaId"], created["accessToken"]
 

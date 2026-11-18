@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.schemas import to_kst_iso
 from app.db.models import Agenda, Meeting
 from app.meetings import timer
+from tests.conftest import started
 from tests.test_realtime import CREATE, ready, receive, room
 
 T0 = timer.utcnow().replace(microsecond=0) - timedelta(hours=1)
@@ -19,7 +20,7 @@ def bearer(token: str) -> dict[str, str]:
 
 
 async def create(client: httpx.AsyncClient) -> tuple[str, str]:
-    data = (await client.post("/api/v1/meetings", json=CREATE)).json()["data"]
+    data = (await started(client, CREATE)).json()["data"]
     return data["meetingId"], data["accessToken"]
 
 

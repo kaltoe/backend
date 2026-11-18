@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.schemas import to_kst_iso
 from app.db.models import Agenda, Meeting
 from app.meetings.end import actual_duration_seconds
+from tests.conftest import started
 from tests.test_agendas import T0, THREE_AGENDAS, at, bearer, create, error, start_at_t0
 from tests.test_realtime import ready, receive, room
 
@@ -82,7 +83,7 @@ async def test_end_paused_meeting(
 
 
 async def test_remote_meeting_skips_postprocess(client: httpx.AsyncClient, session: AsyncSession) -> None:
-    created = (await client.post("/api/v1/meetings", json=THREE_AGENDAS | {"meetingMode": "REMOTE"})).json()["data"]
+    created = (await started(client, THREE_AGENDAS | {"meetingMode": "REMOTE"})).json()["data"]
     assert (await end(client, created)).status_code == 200
     meeting, _ = await reload(session, created["meetingId"])
     assert (meeting.recording_status, meeting.summary_status, meeting.postprocess_status) == (

@@ -14,6 +14,7 @@ from app.db.models import Agenda, Meeting, OfftopicEvent, Participant
 from app.db.session import SessionFactory, get_engine, get_sessionmaker
 from app.main import create_app
 from app.realtime.manager import manager
+from tests.conftest import started
 from tests.test_agendas import T0, at, bearer, error
 from tests.test_offtopic import BODY, NOW, Model, _forget_judges, later, model, say, sessions, setup
 
@@ -25,7 +26,8 @@ def events(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Any]]:
     sent: list[tuple[str, Any]] = []
 
     async def capture(meeting_id: str, type_: str, data: Any = None) -> None:
-        sent.append((type_, data))
+        if type_.startswith("offtopic."):  # 회의 시작(meeting.started) 등은 보지 않는다
+            sent.append((type_, data))
 
     monkeypatch.setattr(manager, "broadcast", capture)
     return sent
@@ -112,7 +114,8 @@ async def test_many_people_at_once_dismiss_once(db_url: str, monkeypatch: pytest
     sent: list[str] = []
 
     async def capture(meeting_id: str, type_: str, data: Any = None) -> None:
-        sent.append(type_)
+        if type_.startswith("offtopic."):
+            sent.append(type_)
 
     monkeypatch.setattr(manager, "broadcast", capture)
     get_engine.cache_clear()
@@ -121,7 +124,7 @@ async def test_many_people_at_once_dismiss_once(db_url: str, monkeypatch: pytest
     try:
         app = create_app()
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            created = (await client.post("/api/v1/meetings", json=BODY)).json()["data"]
+            created = (await started(client, BODY)).json()["data"]
             code = created["meetingId"]
             tokens = [created["accessToken"]]
             for name in ("민지", "준호", "서연", "도윤"):

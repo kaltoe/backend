@@ -20,6 +20,7 @@ from app.db.models import Meeting
 from app.db.session import SessionFactory
 from app.meetings import merge, postprocess
 from app.realtime.audio import BYTES_PER_MS, write_pcm
+from tests.conftest import started
 from tests.test_agendas import T0, THREE_AGENDAS, at, bearer, create, start_at_t0
 
 needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg 가 없습니다")
@@ -104,7 +105,7 @@ async def ended_meeting(
     client: httpx.AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch, body: dict[str, Any]
 ) -> str:
     """T0 에 시작해 1초 일시 정지 후 T0 + 4초에 끝난 회의. 타임라인은 3000ms."""
-    created = (await client.post("/api/v1/meetings", json=body)).json()["data"]
+    created = (await started(client, body)).json()["data"]
     code: str = created["meetingId"]
     await start_at_t0(session, code)
     headers = bearer(created["accessToken"])
